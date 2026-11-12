@@ -1,0 +1,21 @@
+
+/* stylelint-disable at-rule-no-unknown */
+/* stylelint-disable-next-line at-rule-no-unknown */
+@theme {
+  --color-brand: var(--color-primary);
+  --color-brand-hover: var(--color-primary-hover);
+  --color-brand-secondary: var(--color-secondary);
+  --color-brand-accent: var(--color-accent);
+
+  --color-page: var(--color-background);
+  --color-outline: var(--color-border);
+
+  --font-sans: var(--font-primary);
+
+  --radius-control: var(--radius-md);
+  --radius-card: var(--radius-lg);
+  --radius-panel: var(--radius-xl);
+
+  --shadow-card: var(--shadow-md);
+  --shadow-panel: var(--shadow-lg);
+}
