@@ -2,29 +2,46 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+const getValidQuantity = (quantity, stock) => {
+  const value = Math.trunc(Number(quantity) || 1);
+
+  return Math.max(1, Math.min(value, stock));
+};
+
 const useShopStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
+      // State
       cartItems: [],
       wishlistItems: [],
 
-      addToCart: (product, quantity = 1) =>
-        set((state) => {
-          if (product.stock <= 0) return state;
+      // Cart Actions
+      addToCart: (product, quantity = 1) => {
+        if (!product?.id || !Number.isFinite(Number(product.stock))) {
+          return;
+        }
 
-          const existing = state.cartItems.find(
+        const stock = Math.max(0, Math.trunc(Number(product.stock)));
+
+        if (stock <= 0) return;
+
+        const validQuantity = getValidQuantity(quantity, stock);
+
+        set((state) => {
+          const existingItem = state.cartItems.find(
             (item) => item.product.id === product.id
           );
 
-          if (existing) {
+          if (existingItem) {
             return {
               cartItems: state.cartItems.map((item) =>
                 item.product.id === product.id
                   ? {
                       ...item,
-                      quantity: Math.min(
-                        item.quantity + quantity,
-                        product.stock
+                      product,
+                      quantity: getValidQuantity(
+                        item.quantity + validQuantity,
+                        stock
                       ),
                     }
                   : item
@@ -35,10 +52,14 @@ const useShopStore = create(
           return {
             cartItems: [
               ...state.cartItems,
-              { product, quantity: Math.min(quantity, product.stock) },
+              {
+                product,
+                quantity: validQuantity,
+              },
             ],
           };
-        }),
+        });
+      },
 
       removeFromCart: (productId) =>
         set((state) => ({
@@ -53,15 +74,18 @@ const useShopStore = create(
             item.product.id === productId
               ? {
                   ...item,
-                  quantity: Math.max(
-                    1,
-                    Math.min(quantity, item.product.stock)
+                  quantity: getValidQuantity(
+                    quantity,
+                    Math.max(1, Number(item.product.stock) || 1)
                   ),
                 }
               : item
           ),
         })),
 
+      clearCart: () => set({ cartItems: [] }),
+
+      // Wishlist Actions
       toggleWishlist: (productId) =>
         set((state) => ({
           wishlistItems: state.wishlistItems.includes(productId)
@@ -69,10 +93,32 @@ const useShopStore = create(
             : [...state.wishlistItems, productId],
         })),
 
-      clearCart: () => set({ cartItems: [] }),
+      removeFromWishlist: (productId) =>
+        set((state) => ({
+          wishlistItems: state.wishlistItems.filter(
+            (id) => id !== productId
+          ),
+        })),
+
+      // Cart Calculations
+      getCartCount: () =>
+        get().cartItems.reduce(
+          (total, item) => total + item.quantity,
+          0
+        ),
+
+      getCartSubtotal: () =>
+        get().cartItems.reduce(
+          (total, item) =>
+            total + Number(item.product.price || 0) * item.quantity,
+          0
+        ),
+
+      getWishlistCount: () => get().wishlistItems.length,
     }),
     {
       name: "nexamart-shop-v1",
+
       partialize: (state) => ({
         cartItems: state.cartItems,
         wishlistItems: state.wishlistItems,
