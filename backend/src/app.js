@@ -5,12 +5,17 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 
+import authRoutes from "./routes/auth/auth.routes.js";
+import orderRoutes from "./routes/order/order.routes.js";
+import productRoutes from "./routes/product/product.routes.js";
+import adminRoutes from "./routes/admin/admin.routes.js";
+
 import notFoundMiddleware from "./middleware/not-found.middleware.js";
 import errorMiddleware from "./middleware/error.middleware.js";
 
 const app = express();
 
-// Security middleware
+// Security
 app.use(helmet());
 
 app.use(
@@ -48,7 +53,13 @@ app.get("/api/v1/health", (req, res) => {
   });
 });
 
-// 404 and centralized error handling
+// API routes
+app.use("/api/v1/products", productRoutes);
+app.use("/api/v1/orders", orderRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/admin", adminRoutes);
+
+// Error handling
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 

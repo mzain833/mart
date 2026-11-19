@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate  } from "react-router-dom";
 import {
   ArrowLeft,
   Heart,
@@ -30,7 +30,7 @@ export default function ProductDetailsPage() {
   const addToCart = useShopStore((state) => state.addToCart);
   const toggleWishlist = useShopStore((state) => state.toggleWishlist);
   const wishlistItems = useShopStore((state) => state.wishlistItems);
-
+const navigate = useNavigate();
   const isWishlisted = product
     ? wishlistItems.includes(product.id)
     : false;
@@ -133,7 +133,7 @@ export default function ProductDetailsPage() {
 
             <div className="details-rating">
               <Star size={17} fill="currentColor" />
-              <strong>{product.rating.toFixed(1)}</strong>
+            <strong>{Number(product.rating ?? 0).toFixed(1)}</strong>
               <span>
                 ({product.reviewCount} customer reviews)
               </span>
@@ -205,7 +205,10 @@ export default function ProductDetailsPage() {
                 <button
                   type="button"
                   className="details-add-button"
-                  onClick={() => addToCart(product, quantity)}
+                  onClick={() => {
+  addToCart(product, quantity);
+  navigate("/cart");
+}}
                 >
                   <ShoppingBag size={19} />
                   Add to Cart

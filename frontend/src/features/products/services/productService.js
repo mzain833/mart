@@ -1,149 +1,69 @@
 
-const products = [
-  {
-    id: "NM-001",
-    slug: "premium-wireless-headphones",
-    name: "Premium Wireless Headphones",
-    category: "Electronics",
-    image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=85",
-    price: 18500,
-    compareAtPrice: 22000,
-    rating: 4.8,
-    reviewCount: 124,
-    badge: "BEST SELLER",
-    description: "Experience exceptional audio clarity with premium wireless headphones designed for everyday comfort and immersive listening.",
-    stock: 18,
-    isNew: false,
-    bestSeller: true,
-  },
-  {
-    id: "NM-002",
-    slug: "urban-classic-sneakers",
-    name: "Urban Classic Sneakers",
-    category: "Fashion",
-    image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=85",
-    price: 12500,
-    compareAtPrice: 15000,
-    rating: 4.6,
-    reviewCount: 86,
-    badge: "POPULAR",
-    description: "Modern everyday sneakers combining timeless styling, comfort and versatile everyday performance.",
-    stock: 24,
-    isNew: true,
-    bestSeller: false,
-  },
-  {
-    id: "NM-003",
-    slug: "minimalist-classic-watch",
-    name: "Minimalist Classic Watch",
-    category: "Accessories",
-    image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=85",
-    price: 24500,
-    compareAtPrice: 29000,
-    rating: 4.9,
-    reviewCount: 153,
-    badge: "PREMIUM",
-    description: "A refined minimalist timepiece designed to complement both casual and formal wardrobes.",
-    stock: 12,
-    isNew: false,
-    bestSeller: true,
-  },
-  {
-    id: "NM-004",
-    slug: "modern-designer-chair",
-    name: "Modern Designer Chair",
-    category: "Home & Living",
-    image: "https://images.unsplash.com/photo-1503602642458-232111445657?w=800&q=85",
-    price: 32000,
-    compareAtPrice: null,
-    rating: 4.7,
-    reviewCount: 42,
-    badge: "NEW",
-    description: "A contemporary furniture piece combining elegant design with functional comfort.",
-    stock: 7,
-    isNew: true,
-    bestSeller: false,
-  },
-  {
-    id: "NM-005",
-    slug: "professional-digital-camera",
-    name: "Professional Digital Camera",
-    category: "Electronics",
-    image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&q=85",
-    price: 68500,
-    compareAtPrice: 75000,
-    rating: 4.9,
-    reviewCount: 98,
-    badge: "EDITOR'S PICK",
-    description: "Capture memorable moments with a versatile camera built for creative photography.",
-    stock: 9,
-    isNew: true,
-    bestSeller: true,
-  },
-  {
-    id: "NM-006",
-    slug: "smart-fitness-watch",
-    name: "Smart Fitness Watch",
-    category: "Electronics",
-    image: "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&q=85",
-    price: 19500,
-    compareAtPrice: 23500,
-    rating: 4.5,
-    reviewCount: 67,
-    badge: null,
-    description: "A versatile smartwatch for staying connected and keeping track of daily activities.",
-    stock: 0,
-    isNew: false,
-    bestSeller: false,
-  },
-  {
-    id: "NM-007",
-    slug: "everyday-premium-footwear",
-    name: "Everyday Premium Footwear",
-    category: "Fashion",
-    image: "https://images.unsplash.com/photo-1491553895911-0055eca6402d?w=800&q=85",
-    price: 9800,
-    compareAtPrice: null,
-    rating: 4.4,
-    reviewCount: 38,
-    badge: null,
-    description: "Comfortable footwear with a contemporary silhouette for everyday use.",
-    stock: 15,
-    isNew: true,
-    bestSeller: false,
-  },
-  {
-    id: "NM-008",
-    slug: "premium-camera-accessory",
-    name: "Premium Camera Accessory",
-    category: "Accessories",
-    image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&q=85",
-    price: 8500,
-    compareAtPrice: 10500,
-    rating: 4.6,
-    reviewCount: 51,
-    badge: "SPECIAL OFFER",
-    description: "A carefully selected photography accessory for enthusiasts and creative professionals.",
-    stock: 21,
-    isNew: false,
-    bestSeller: false,
-  },
-];
+import apiClient from "../../../lib/apiClient.js";
+
+const normalizeProduct = (product) => ({
+  ...product,
+  id: product.sku,
+  rating: Number(product.rating ?? 0),
+  reviewCount: Number(product.reviewCount ?? 0),
+  stock: Number(product.stock ?? 0),
+  isNew: product.isNewArrival ?? false,
+});;
+
+const getProductsPage = async (params = {}) => {
+  const response = await apiClient.get("/products", {
+    params,
+  });
+
+  const result = response.data.data;
+
+  return {
+    ...result,
+    products: result.products.map(normalizeProduct),
+  };
+};
+
+const getProducts = async (params = {}) => {
+  const result = await getProductsPage(params);
+
+  return result.products;
+};
+
+
+const getProductBySlug = async (slug) => {
+  try {
+    const response = await apiClient.get(
+      `/products/${encodeURIComponent(slug)}`
+    );
+
+    return normalizeProduct(response.data.data.product);
+  } catch (error) {
+    if (error.response?.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+
+
+const getProductById = async (id) => {
+  const products = await getProducts({ limit: 100 });
+
+  return products.find((product) => product.id === id) ?? null;
+};
+
+const getCategories = async () => {
+  const response = await apiClient.get("/products/categories");
+
+  return response.data.data;
+};
 
 export const productService = {
-  async getProducts() {
-    return products;
-  },
-
-  async getProductBySlug(slug) {
-    return products.find((product) => product.slug === slug) ?? null;
-  },
-
-  async getProductById(id) {
-    return products.find((product) => product.id === id) ?? null;
-  },
-
-  async getCategories() {
-    return [...new Set(products.map((product) => product.category))];
-  },
+  getProducts,
+  getProductsPage,
+  getProductBySlug,
+  getProductById,
+  getCategories,
 };

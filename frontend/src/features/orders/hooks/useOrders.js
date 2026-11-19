@@ -1,19 +1,41 @@
-import { useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
+
 import orderService from "../services/orderService";
 
-const useOrders = (email) => {
-  const allOrders = useSyncExternalStore(
-    orderService.subscribe,
-    orderService.getOrdersSnapshot,
-    () => []
-  );
+const useOrders = () => {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const orders = useMemo(
-    () => orderService.getOrdersByEmail(email),
-    [allOrders, email]
-  );
+  const refreshOrders = useCallback(async () => {
+    setLoading(true);
+    setError("");
 
-  return { orders };
+    try {
+      const result = await orderService.getMyOrders();
+
+      setOrders(Array.isArray(result) ? result : []);
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          err.message ||
+          "Unable to load your orders."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshOrders();
+  }, [refreshOrders]);
+
+  return {
+    orders,
+    loading,
+    error,
+    refreshOrders,
+  };
 };
 
 export default useOrders;

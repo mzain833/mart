@@ -1,17 +1,26 @@
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+
 import accountService from "../services/accountService";
 
 const useAccount = () => {
-  const currentUser = useSyncExternalStore(
+  const account = useSyncExternalStore(
     accountService.subscribe,
-    accountService.getCurrentUser,
-    () => null
+    accountService.getSnapshot,
+    accountService.getSnapshot
   );
 
+  useEffect(() => {
+    accountService.initialize();
+  }, []);
+
   return {
-    currentUser,
-    isAuthenticated: Boolean(currentUser),
+    currentUser: account.currentUser,
+
+    isAuthenticated: Boolean(account.currentUser),
+
+    isLoading: !account.isInitialized,
+
     login: accountService.login,
     register: accountService.register,
     logout: accountService.logout,

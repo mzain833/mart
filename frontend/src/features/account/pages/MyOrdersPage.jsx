@@ -1,6 +1,10 @@
 
 import { Link } from "react-router-dom";
-import { Package, ShoppingBag, ArrowRight } from "lucide-react";
+import {
+  Package,
+  ShoppingBag,
+  ArrowRight,
+} from "lucide-react";
 
 import MainLayout from "../../../layouts/MainLayout";
 import useAccount from "../hooks/useAccount";
@@ -16,10 +20,17 @@ import {
 
 import "../account.css";
 
+const getOrderId = (order) => order._id || order.id;
+
 const MyOrdersPage = () => {
   const { currentUser } = useAccount();
 
-  const { orders } = useOrders(currentUser?.email);
+  const {
+    orders,
+    loading,
+    error,
+    refreshOrders,
+  } = useOrders();
 
   return (
     <MainLayout>
@@ -38,56 +49,86 @@ const MyOrdersPage = () => {
               <div className="account-panel">
                 <div className="account-panel-heading">
                   <h2>Order History</h2>
+
                   <p>
-                    {orders.length
-                      ? `${orders.length} order(s) found.`
-                      : "Your recent purchases will appear here."}
+                    {loading
+                      ? "Loading your orders..."
+                      : `${orders.length} order(s) found.`}
                   </p>
                 </div>
 
-                {orders.length > 0 ? (
+                {loading ? (
+                  <div className="account-empty-state">
+                    <Package size={32} />
+                    <h3>Loading Orders</h3>
+                    <p>Please wait while we retrieve your purchases.</p>
+                  </div>
+                ) : error ? (
+                  <div
+                    className="account-empty-state"
+                    role="alert"
+                  >
+                    <Package size={32} />
+                    <h3>Unable to Load Orders</h3>
+                    <p>{error}</p>
+
+                    <button
+                      type="button"
+                      className="account-primary-button"
+                      onClick={refreshOrders}
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : orders.length > 0 ? (
                   <div className="account-orders-list">
-                    {orders.map((order) => (
-                      <article
-                        className="account-order-card"
-                        key={order.id}
-                      >
-                        <div className="account-order-header">
-                          <div>
-                            <span>Order Reference</span>
-                            <strong>{order.orderNumber}</strong>
+                    {orders.map((order) => {
+                      const orderId = getOrderId(order);
+
+                      return (
+                        <article
+                          className="account-order-card"
+                          key={orderId}
+                        >
+                          <div className="account-order-header">
+                            <div>
+                              <span>Order Reference</span>
+                              <strong>
+                                {order.orderNumber || orderId}
+                              </strong>
+                            </div>
+
+                            <span
+                              className={`order-status order-status-${order.status}`}
+                            >
+                              {getOrderStatusLabel(order.status)}
+                            </span>
                           </div>
 
-                          <span
-                            className={`order-status order-status-${order.status}`}
+                          <div className="account-order-meta">
+                            <span>
+                              {formatOrderDate(order.createdAt)}
+                            </span>
+
+                            <span>
+                              {(order.items || []).length} product(s)
+                            </span>
+
+                            <strong>
+                              {formatOrderPrice(order.total)}
+                            </strong>
+                          </div>
+
+                          <Link
+                            to={`/account/orders/${orderId}`}
+                            className="account-order-link"
                           >
-                            {getOrderStatusLabel(order.status)}
-                          </span>
-                        </div>
-
-                        <div className="account-order-meta">
-                          <span>
-                            {formatOrderDate(order.createdAt)}
-                          </span>
-
-                          <span>
-                            {order.items.length} product(s)
-                          </span>
-
-                          <strong>
-                            {formatOrderPrice(order.total)}
-                          </strong>
-                        </div>
-
-                        <Link
-                          to={`/account/orders/${order.id}`}
-                          className="account-order-link"
-                        >
-                          View Order Details
-                          <ArrowRight size={16} />
-                        </Link>
-                      </article>
-                    ))}
+                            View Order Details
+                            <ArrowRight size={16} />
+                          </Link>
+                        </article>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="account-empty-state">

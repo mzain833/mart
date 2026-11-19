@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -14,7 +14,6 @@ import useAccount from "../../account/hooks/useAccount";
 import AccountHeader from "../../account/components/AccountHeader";
 import AccountSidebar from "../../account/components/AccountSidebar";
 
-import useOrders from "../hooks/useOrders";
 import orderService from "../services/orderService";
 
 import OrderStatusTimeline from "../components/OrderStatusTimeline";
@@ -28,33 +27,95 @@ import {
 
 import "../../account/account.css";
 
+const getItemName = (item) =>
+  item.product?.name ||
+  item.productName ||
+  item.name ||
+  item.sku ||
+  "Product";
+
+const getItemLineTotal = (item) =>
+  Number(
+    item.lineTotal ??
+      item.totalPrice ??
+      Number(item.unitPrice ?? item.price ?? item.product?.price ?? 0) *
+        Number(item.quantity ?? 0)
+  );
+
 const OrderDetailsPage = () => {
   const { orderId } = useParams();
   const { currentUser } = useAccount();
-  const { orders } = useOrders(currentUser?.email);
+
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
 
-  const order = orders.find((item) => item.id === orderId);
+  const loadOrder = useCallback(async () => {
+    if (!orderId) {
+      setLoadError("Invalid order reference.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setLoadError("");
+
+    try {
+      const result = await orderService.getMyOrderById(orderId);
+
+      if (!result) {
+        throw new Error("Order details could not be found.");
+      }
+
+      setOrder(result);
+    } catch (error) {
+      setOrder(null);
+      setLoadError(
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to load order details."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [orderId]);
+
+  useEffect(() => {
+    loadOrder();
+  }, [loadOrder]);
 
   const canCancel =
     order &&
     ["placed", "confirmed", "processing"].includes(order.status);
 
-  const handleCancelOrder = (reason) => {
+  const handleCancelOrder = async (reason) => {
     if (!order || cancelling) return;
 
     setCancelling(true);
     setCancelError("");
 
     try {
-      orderService.cancelOrder(order.id, reason);
+      const updatedOrder = await orderService.cancelOrder(
+        order._id || order.id,
+        reason
+      );
+
+      if (updatedOrder) {
+        setOrder(updatedOrder);
+      } else {
+        await loadOrder();
+      }
+
       setShowCancelDialog(false);
     } catch (error) {
       setCancelError(
-        error.message || "Unable to cancel your order."
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to cancel your order."
       );
     } finally {
       setCancelling(false);
@@ -75,10 +136,18 @@ const OrderDetailsPage = () => {
             <AccountSidebar />
 
             <section className="account-content">
-              {!order ? (
+              {loading ? (
+                <div className="account-panel">
+                  <h2>Loading Order Details</h2>
+                  <p>Please wait while we retrieve your order.</p>
+                </div>
+              ) : loadError || !order ? (
                 <div className="account-panel">
                   <h2>Order Not Found</h2>
-                  <p>This order is unavailable in your account.</p>
+                  <p>
+                    {loadError ||
+                      "This order is unavailable in your account."}
+                  </p>
 
                   <Link
                     to="/account/orders"
@@ -117,7 +186,9 @@ const OrderDetailsPage = () => {
                   {canCancel && (
                     <div className="order-cancellation">
                       <div>
-                        <strong>Need to cancel this order?</strong>
+                        <strong>
+                          Need to cancel this order?
+                        </strong>
                         <p>
                           You can cancel before the order is shipped.
                         </p>
@@ -126,7 +197,10 @@ const OrderDetailsPage = () => {
                       <button
                         type="button"
                         className="order-cancel-button"
-                        onClick={() => setShowCancelDialog(true)}
+                        onClick={() => {
+                          setCancelError("");
+                          setShowCancelDialog(true);
+                        }}
                       >
                         <XCircle size={17} />
                         Cancel Order
@@ -146,18 +220,18 @@ const OrderDetailsPage = () => {
                       Ordered Products
                     </h3>
 
-                    {order.items.map((item, index) => (
+                    {(order.items || []).map((item, index) => (
                       <div
                         className="order-detail-product"
-                        key={`${item.product.id}-${index}`}
+                        key={item._id || item.sku || index}
                       >
                         <div>
-                          <strong>{item.product.name}</strong>
+                          <strong>{getItemName(item)}</strong>
                           <span>Quantity: {item.quantity}</span>
                         </div>
 
                         <strong>
-                          {formatOrderPrice(item.lineTotal)}
+                          {formatOrderPrice(getItemLineTotal(item))}
                         </strong>
                       </div>
                     ))}
@@ -170,23 +244,27 @@ const OrderDetailsPage = () => {
                     </h3>
 
                     <p>
-                      {order.customer.fullName}
+                      {order.customer?.fullName}
                       <br />
-                      {order.customer.addressLine1}
-                      {order.customer.addressLine2 && (
+                      {order.customer?.addressLine1}
+
+                      {order.customer?.addressLine2 && (
                         <>
                           <br />
                           {order.customer.addressLine2}
                         </>
                       )}
+
                       <br />
-                      {order.customer.city},{" "}
-                      {order.customer.province}
-                      {order.customer.postalCode && (
+                      {order.customer?.city},{" "}
+                      {order.customer?.province}
+
+                      {order.customer?.postalCode && (
                         <> - {order.customer.postalCode}</>
                       )}
+
                       <br />
-                      {order.customer.phone}
+                      {order.customer?.phone}
                     </p>
                   </div>
 
@@ -223,7 +301,11 @@ const OrderDetailsPage = () => {
 
                     <div className="order-detail-product">
                       <span>Delivery Charges</span>
-                      <strong>To be confirmed</strong>
+                      <strong>
+                        {order.deliveryFee == null
+                          ? "To be confirmed"
+                          : formatOrderPrice(order.deliveryFee)}
+                      </strong>
                     </div>
 
                     <div className="order-detail-total">
@@ -235,9 +317,8 @@ const OrderDetailsPage = () => {
                   </div>
 
                   <p className="order-details-note">
-                    Order status is currently managed by the frontend
-                    demo system. Live courier tracking will be
-                    integrated with the backend.
+                    Your order information is retrieved securely
+                    from NexaMart's backend.
                   </p>
                 </div>
               )}
@@ -248,7 +329,11 @@ const OrderDetailsPage = () => {
 
       <CancelOrderDialog
         open={showCancelDialog}
-        onClose={() => setShowCancelDialog(false)}
+        onClose={() => {
+          if (!cancelling) {
+            setShowCancelDialog(false);
+          }
+        }}
         onConfirm={handleCancelOrder}
         loading={cancelling}
       />

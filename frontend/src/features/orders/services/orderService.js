@@ -1,258 +1,70 @@
+import apiClient from "../../../lib/apiClient.js";
 
-const ORDERS_STORAGE_KEY = "nexamart-orders-v1";
+const getResponseData = (response) => response.data?.data;
 
-const listeners = new Set();
+const getMyOrders = async () => {
+  const response = await apiClient.get("/orders/my-orders");
 
-const ORDER_STATUSES = [
-  "placed",
-  "confirmed",
-  "processing",
-  "shipped",
-  "delivered",
-  "cancelled",
-];
-
-const readOrders = () => {
-  try {
-    const stored = localStorage.getItem(ORDERS_STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return getResponseData(response)?.orders ?? [];
 };
 
-let orders = readOrders();
+const getMyOrderById = async (orderId) => {
+  const response = await apiClient.get(`/orders/${orderId}`);
 
-const notify = () => {
-  listeners.forEach((listener) => listener());
+  return getResponseData(response)?.order ?? null;
 };
 
-const commitOrders = (nextOrders) => {
-  try {
-    localStorage.setItem(
-      ORDERS_STORAGE_KEY,
-      JSON.stringify(nextOrders)
-    );
+const getGuestOrderConfirmation = async (orderId, accessToken) => {
+  const response = await apiClient.post(
+    `/orders/guest/${orderId}/confirmation`,
+    { accessToken }
+  );
 
-    orders = nextOrders;
-    notify();
-  } catch {
-    throw new Error("Unable to save order changes.");
-  }
+  return getResponseData(response)?.order ?? null;
 };
 
-const normalizeEmail = (email) =>
-  String(email || "").trim().toLowerCase();
-
-const generateId = () =>
-  globalThis.crypto?.randomUUID?.() ||
-  `order-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-const generateOrderNumber = () =>
-  `NEXA-${Date.now().toString().slice(-8)}-${Math.random()
-    .toString(36)
-    .slice(2, 5)
-    .toUpperCase()}`;
-
-const orderService = {
-  subscribe(listener) {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  },
-
-  getOrdersSnapshot() {
-    return orders;
-  },
-
-  getOrderById(orderId) {
-    return orders.find((order) => order.id === orderId) || null;
-  },
-
-  getOrdersByEmail(email) {
-    const normalizedEmail = normalizeEmail(email);
-
-    if (!normalizedEmail) return [];
-
-    return orders
-      .filter(
-        (order) =>
-          normalizeEmail(order.customer?.email) === normalizedEmail
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() -
-          new Date(a.createdAt).getTime()
-      );
-  },
-
-  async createOrder({
+const createOrder = async ({
+  customer,
+  items,
+  deliveryMethod = "standard",
+  paymentMethod = "cod",
+}) => {
+  const payload = {
     customer,
-    customerId = null,
-    items,
+    items: items.map(({ product, quantity }) => ({
+      sku: product.sku || product.id,
+      quantity,
+    })),
     deliveryMethod,
     paymentMethod,
-  }) {
-    if (!customer?.fullName || !customer?.email || !items?.length) {
-      throw new Error("Required order information is missing.");
-    }
+  };
 
-    const orderItems = items.map(({ product, quantity }) => {
-      const price = Number(product?.price);
-      const parsedQuantity = Number(quantity);
+  const response = await apiClient.post("/orders", payload);
 
-      if (
-        !product?.id ||
-        !Number.isFinite(price) ||
-        price < 0 ||
-        !Number.isInteger(parsedQuantity) ||
-        parsedQuantity < 1
-      ) {
-        throw new Error("Invalid product information in your cart.");
-      }
+  const result = getResponseData(response);
 
-      return {
-        product: { ...product },
-        quantity: parsedQuantity,
-        unitPrice: price,
-        lineTotal: price * parsedQuantity,
-      };
-    });
+  if (!result?.order) {
+    throw new Error("Order could not be created. Please try again.");
+  }
 
-    const subtotal = orderItems.reduce(
-      (total, item) => total + item.lineTotal,
-      0
-    );
+  return result;
+};
 
-    const now = new Date().toISOString();
+const cancelOrder = async (orderId, reason) => {
+  const response = await apiClient.patch(
+    `/orders/${orderId}/cancel`,
+    { reason }
+  );
 
-    const order = {
-      id: generateId(),
-      orderNumber: generateOrderNumber(),
-      customerId,
-      customer: {
-        ...customer,
-        email: normalizeEmail(customer.email),
-      },
-      items: orderItems,
-      subtotal,
-      deliveryFee: null,
-      total: subtotal,
-      deliveryMethod,
-      paymentMethod,
-      paymentStatus: "pending",
-      status: "placed",
-      statusHistory: [
-        {
-          status: "placed",
-          timestamp: now,
-          note: "Your order has been successfully placed.",
-        },
-      ],
-      cancellationReason: "",
-      createdAt: now,
-      updatedAt: now,
-    };
+  return getResponseData(response)?.order ?? null;
+};
 
-    commitOrders([...orders, order]);
-
-    return order;
-  },
-
-  updateOrderStatus(orderId, nextStatus, note = "") {
-    if (!ORDER_STATUSES.includes(nextStatus)) {
-      throw new Error("Invalid order status.");
-    }
-
-    const order = orders.find((item) => item.id === orderId);
-
-    if (!order) {
-      throw new Error("Order not found.");
-    }
-
-    if (order.status === "cancelled" || order.status === "delivered") {
-      throw new Error("This order can no longer be updated.");
-    }
-
-    const allowedTransitions = {
-      placed: ["confirmed", "cancelled"],
-      confirmed: ["processing", "cancelled"],
-      processing: ["shipped", "cancelled"],
-      shipped: ["delivered"],
-    };
-
-    if (!allowedTransitions[order.status]?.includes(nextStatus)) {
-      throw new Error("This order status transition is not allowed.");
-    }
-
-    const now = new Date().toISOString();
-
-    const updatedOrder = {
-      ...order,
-      status: nextStatus,
-      updatedAt: now,
-      statusHistory: [
-        ...(order.statusHistory || []),
-        {
-          status: nextStatus,
-          timestamp: now,
-          note: note.trim(),
-        },
-      ],
-    };
-
-    commitOrders(
-      orders.map((item) =>
-        item.id === orderId ? updatedOrder : item
-      )
-    );
-
-    return updatedOrder;
-  },
-
-  cancelOrder(orderId, reason) {
-    const normalizedReason = String(reason || "").trim();
-
-    if (!normalizedReason) {
-      throw new Error("Please provide a cancellation reason.");
-    }
-
-    const order = orders.find((item) => item.id === orderId);
-
-    if (!order) {
-      throw new Error("Order not found.");
-    }
-
-    if (!["placed", "confirmed", "processing"].includes(order.status)) {
-      throw new Error("This order is no longer eligible for cancellation.");
-    }
-
-    const now = new Date().toISOString();
-
-    const updatedOrder = {
-      ...order,
-      status: "cancelled",
-      cancellationReason: normalizedReason,
-      updatedAt: now,
-      statusHistory: [
-        ...(order.statusHistory || []),
-        {
-          status: "cancelled",
-          timestamp: now,
-          note: normalizedReason,
-        },
-      ],
-    };
-
-    commitOrders(
-      orders.map((item) =>
-        item.id === orderId ? updatedOrder : item
-      )
-    );
-
-    return updatedOrder;
-  },
+const orderService = {
+  createOrder,
+  getMyOrders,
+  getMyOrderById,
+  getGuestOrderConfirmation,
+  cancelOrder,
 };
 
 export default orderService;

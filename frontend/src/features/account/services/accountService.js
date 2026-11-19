@@ -1,120 +1,126 @@
 
-const SESSION_KEY = "nexamart-account-session";
-const USERS_KEY = "nexamart-account-users";
+import apiClient from "../../../lib/apiClient";
 
-const readStorage = (key, fallback = null) => {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
-  } catch {
-    return fallback;
-  }
+let snapshot = {
+  currentUser: null,
+  isInitialized: false,
 };
-
-const readUsers = () => {
-  const users = readStorage(USERS_KEY, []);
-  return Array.isArray(users) ? users : [];
-};
-
-let users = readUsers();
-let currentUser = readStorage(SESSION_KEY);
 
 const listeners = new Set();
+let initializationPromise = null;
 
 const notify = () => {
   listeners.forEach((listener) => listener());
 };
 
-const persistUsers = () => {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-};
-
-const persistSession = (user) => {
-  currentUser = user;
-
-  try {
-    if (user) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(SESSION_KEY);
-    }
-  } catch {
-    // Storage may be unavailable.
-  }
+const updateSnapshot = (updates) => {
+  snapshot = {
+    ...snapshot,
+    ...updates,
+  };
 
   notify();
 };
 
-const createUser = ({ fullName, email, phone = "" }) => ({
-  id: `customer-${Date.now()}`,
-  fullName: fullName.trim(),
-  email: email.trim().toLowerCase(),
-  phone: phone.trim(),
-  createdAt: new Date().toISOString(),
-});
+const getUser = (response) => response.data.data.user;
 
 const accountService = {
-  getCurrentUser: () => currentUser,
+  getSnapshot: () => snapshot,
 
   subscribe: (listener) => {
     listeners.add(listener);
+
     return () => listeners.delete(listener);
   },
 
-  async register(values) {
-    const email = values.email.trim().toLowerCase();
-
-    if (users.some((user) => user.email === email)) {
-      throw new Error("An account with this email already exists.");
+  async initialize() {
+    if (snapshot.isInitialized) {
+      return snapshot.currentUser;
     }
 
-    const user = createUser(values);
+    if (initializationPromise) {
+      return initializationPromise;
+    }
 
-    users = [...users, user];
-    persistUsers();
-    persistSession(user);
+    initializationPromise = (async () => {
+      try {
+        const response = await apiClient.get("/auth/me");
+
+        updateSnapshot({
+          currentUser: getUser(response),
+          isInitialized: true,
+        });
+      } catch {
+        updateSnapshot({
+          currentUser: null,
+          isInitialized: true,
+        });
+      } finally {
+        initializationPromise = null;
+      }
+
+      return snapshot.currentUser;
+    })();
+
+    return initializationPromise;
+  },
+
+  async register(values) {
+    const response = await apiClient.post(
+      "/auth/register",
+      values
+    );
+
+    const user = getUser(response);
+
+    updateSnapshot({
+      currentUser: user,
+      isInitialized: true,
+    });
 
     return user;
   },
 
-  async login({ email }) {
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const user = users.find(
-      (item) => item.email === normalizedEmail
+  async login(values) {
+    const response = await apiClient.post(
+      "/auth/login",
+      values
     );
 
-    if (!user) {
-      throw new Error("No account found with this email address.");
-    }
+    const user = getUser(response);
 
-    persistSession(user);
+    updateSnapshot({
+      currentUser: user,
+      isInitialized: true,
+    });
+
     return user;
   },
 
   async logout() {
-    persistSession(null);
+    try {
+      await apiClient.post("/auth/logout");
+    } finally {
+      updateSnapshot({
+        currentUser: null,
+        isInitialized: true,
+      });
+    }
   },
 
-  async updateProfile(updates) {
-    if (!currentUser) {
-      throw new Error("Please sign in to update your profile.");
-    }
-
-    const updatedUser = {
-      ...currentUser,
-      fullName: updates.fullName.trim(),
-      phone: updates.phone.trim(),
-    };
-
-    users = users.map((user) =>
-      user.id === updatedUser.id ? updatedUser : user
+  async updateProfile(values) {
+    const response = await apiClient.patch(
+      "/auth/profile",
+      values
     );
 
-    persistUsers();
-    persistSession(updatedUser);
+    const user = getUser(response);
 
-    return updatedUser;
+    updateSnapshot({
+      currentUser: user,
+    });
+
+    return user;
   },
 
   async requestPasswordReset(email) {
@@ -122,10 +128,9 @@ const accountService = {
       throw new Error("Email address is required.");
     }
 
-    return {
-      success: true,
-      message: "Password reset requires backend integration.",
-    };
+    throw new Error(
+      "Password reset is not available yet."
+    );
   },
 };
 
