@@ -142,6 +142,11 @@ const orderSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    guestAccessTokenHash: {
+  type: String,
+  default: null,
+  select: false,
+},
     customer: {
       type: customerSchema,
       required: true,

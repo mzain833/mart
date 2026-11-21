@@ -1,0 +1,1319 @@
+﻿
+========== E:\NexMart\backend\src\controllers\admin\admin.controller.js ==========
+
+import adminService from "../../services/admin/admin.service.js";
+import ApiResponse from "../../utils/ApiResponse.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const getDashboardStats = async (req, res, next) => {
+  try {
+    const dashboard = await adminService.getDashboardStats();
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        dashboard,
+        "Admin dashboard data retrieved successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getAdminProducts = async (req, res, next) => {
+  try {
+    const result = await adminService.getAdminProducts(req.query);
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        result,
+        "Admin products retrieved successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getAdminProductById = async (req, res, next) => {
+  try {
+    const product = await adminService.getAdminProductById(
+      req.params.id
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { product },
+        "Product retrieved successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const activateProduct = async (req, res, next) => {
+  try {
+    const product = await adminService.activateProduct(req.params.id);
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { product },
+        "Product activated successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deactivateProduct = async (req, res, next) => {
+  try {
+    const product = await adminService.deactivateProduct(req.params.id);
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { product },
+        "Product deactivated successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const adminController = {
+  getDashboardStats,
+  getAdminProducts,
+  getAdminProductById,
+  activateProduct,
+  deactivateProduct,
+};
+
+export default adminController;
+
+
+========== E:\NexMart\backend\src\controllers\order\order.controller.js ==========
+
+import orderService from "../../services/order/order.service.js";
+import ApiResponse from "../../utils/ApiResponse.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const createOrder = async (req, res, next) => {
+  try {
+    const result = await orderService.createOrder({
+      customer: req.body.customer,
+      items: req.body.items,
+      deliveryMethod: req.body.deliveryMethod,
+      paymentMethod: req.body.paymentMethod,
+      userId: req.user?._id || null,
+    });
+
+    return res.status(HTTP_STATUS.CREATED).json(
+      new ApiResponse(
+        HTTP_STATUS.CREATED,
+        result,
+        "Order placed successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getMyOrders = async (req, res, next) => {
+  try {
+    const orders = await orderService.getCustomerOrders(req.user._id);
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { orders },
+        "Orders retrieved successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getMyOrderById = async (req, res, next) => {
+  try {
+    const order = await orderService.getCustomerOrderById(
+      req.params.orderId,
+      req.user._id
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { order },
+        "Order retrieved successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getGuestOrderConfirmation = async (req, res, next) => {
+  try {
+    const order = await orderService.getGuestOrderConfirmation(
+      req.params.orderId,
+      req.body.accessToken
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { order },
+        "Order confirmation retrieved successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const cancelOrder = async (req, res, next) => {
+  try {
+    const order = await orderService.cancelOrder(
+      req.params.orderId,
+      req.user._id,
+      req.body.reason
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { order },
+        "Order cancelled successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const orderController = {
+  createOrder,
+  getMyOrders,
+  getMyOrderById,
+  getGuestOrderConfirmation,
+  cancelOrder,
+};
+
+export default orderController;
+
+
+========== E:\NexMart\backend\src\models\order\Order.model.js ==========
+
+import mongoose from "mongoose";
+
+const orderItemSchema = new mongoose.Schema(
+  {
+    product: {
+      productId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Product",
+        required: true,
+      },
+      sku: {
+        type: String,
+        required: true,
+        trim: true,
+        uppercase: true,
+      },
+      name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      slug: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      image: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: Number.isInteger,
+    },
+    unitPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    lineTotal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false }
+);
+
+const customerSchema = new mongoose.Schema(
+  {
+    fullName: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 80,
+    },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+    phone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    addressLine1: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    addressLine2: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    city: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    province: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    postalCode: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
+const statusHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      required: true,
+      enum: [
+        "placed",
+        "confirmed",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ],
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+    },
+    note: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500,
+    },
+  },
+  { _id: false }
+);
+
+const orderSchema = new mongoose.Schema(
+  {
+    orderNumber: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      uppercase: true,
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    guestAccessTokenHash: {
+  type: String,
+  default: null,
+  select: false,
+},
+    customer: {
+      type: customerSchema,
+      required: true,
+    },
+    items: {
+      type: [orderItemSchema],
+      required: true,
+      validate: {
+        validator: (items) => items.length > 0,
+        message: "An order must contain at least one product.",
+      },
+    },
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    deliveryFee: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    total: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    deliveryMethod: {
+      type: String,
+      required: true,
+      enum: ["standard", "express"],
+    },
+    paymentMethod: {
+      type: String,
+      required: true,
+      enum: ["cod",],
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed", "refunded"],
+      default: "pending",
+    },
+    status: {
+      type: String,
+      enum: [
+        "placed",
+        "confirmed",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ],
+      default: "placed",
+      index: true,
+    },
+    statusHistory: {
+      type: [statusHistorySchema],
+      default: [],
+    },
+    cancellationReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500,
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+);
+
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ guestAccessTokenHash: 1 });
+orderSchema.index({ "customer.email": 1, createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+
+const Order = mongoose.model("Order", orderSchema);
+
+export default Order;
+
+
+========== E:\NexMart\backend\src\routes\admin\admin.routes.js ==========
+
+import { Router } from "express";
+
+import authenticate from "../../middleware/auth/auth.middleware.js";
+import authorizeAdmin from "../../middleware/admin.middleware.js";
+import adminController from "../../controllers/admin/admin.controller.js";
+
+const router = Router();
+
+router.use(authenticate, authorizeAdmin);
+
+router.get("/dashboard", adminController.getDashboardStats);
+
+router.get("/products", adminController.getAdminProducts);
+
+router.get("/products/:id", adminController.getAdminProductById);
+
+router.patch("/products/:id/activate", adminController.activateProduct);
+
+router.patch("/products/:id/deactivate", adminController.deactivateProduct);
+
+export default router;
+
+
+========== E:\NexMart\backend\src\routes\order\order.routes.js ==========
+
+import { Router } from "express";
+
+import orderController from "../../controllers/order/order.controller.js";
+
+import authenticate from "../../middleware/auth/auth.middleware.js";
+import optionalAuthenticate from "../../middleware/auth/optional-auth.middleware.js";
+import validate from "../../middleware/validate.middleware.js";
+
+import {
+  createOrderSchema,
+  cancelOrderSchema,
+  guestOrderConfirmationSchema,
+} from "../../validators/order/order.validator.js";
+
+const router = Router();
+
+// Create order: registered customer or guest
+router.post(
+  "/",
+  optionalAuthenticate,
+  validate(createOrderSchema),
+  orderController.createOrder
+);
+
+// Guest order confirmation: secure token required
+router.post(
+  "/guest/:orderId/confirmation",
+  validate(guestOrderConfirmationSchema),
+  orderController.getGuestOrderConfirmation
+);
+
+// Registered customer's order history
+router.get(
+  "/my-orders",
+  authenticate,
+  orderController.getMyOrders
+);
+
+// Registered customer's individual order
+router.get(
+  "/:orderId",
+  authenticate,
+  orderController.getMyOrderById
+);
+
+// Cancel registered customer's order
+router.patch(
+  "/:orderId/cancel",
+  authenticate,
+  validate(cancelOrderSchema),
+  orderController.cancelOrder
+);
+
+export default router;
+
+
+========== E:\NexMart\backend\src\services\admin\admin.service.js ==========
+
+import mongoose from "mongoose";
+
+import Order from "../../models/order/Order.model.js";
+import Product from "../../models/product/Product.model.js";
+import User from "../../models/user/User.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const LOW_STOCK_THRESHOLD = 5;
+const RECENT_ORDERS_LIMIT = 5;
+const LOW_STOCK_LIMIT = 5;
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  price_asc: { price: 1, _id: 1 },
+  price_desc: { price: -1, _id: -1 },
+  name_asc: { name: 1, _id: 1 },
+  name_desc: { name: -1, _id: -1 },
+});
+
+const throwBadRequest = (message) => {
+  throw new ApiError(HTTP_STATUS.BAD_REQUEST, message);
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parseInteger = (value, field, min, max) => {
+  if (
+    typeof value !== "string" ||
+    !/^\d+$/.test(value)
+  ) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return parsed;
+};
+
+const normalizeAdminProductQuery = (query = {}) => {
+  const allowedFields = new Set([
+    "search",
+    "category",
+    "status",
+    "stockStatus",
+    "sort",
+    "page",
+    "limit",
+  ]);
+
+  for (const field of Object.keys(query)) {
+    if (!allowedFields.has(field)) {
+      throwBadRequest(`Unsupported query parameter: ${field}.`);
+    }
+  }
+
+  if (
+    query.search !== undefined &&
+    typeof query.search !== "string"
+  ) {
+    throwBadRequest("Search must be a valid string.");
+  }
+
+  if (
+    query.category !== undefined &&
+    typeof query.category !== "string"
+  ) {
+    throwBadRequest("Category must be a valid string.");
+  }
+
+  const search = query.search?.trim();
+  const category = query.category?.trim();
+
+  if (search && search.length > MAX_SEARCH_LENGTH) {
+    throwBadRequest("Search query is too long.");
+  }
+
+  if (query.category !== undefined && !category) {
+    throwBadRequest("Category cannot be empty.");
+  }
+
+  const status = query.status ?? "all";
+
+  if (!["all", "active", "inactive"].includes(status)) {
+    throwBadRequest("Invalid product status filter.");
+  }
+
+  const stockStatus = query.stockStatus ?? "all";
+
+  if (
+    !["all", "in_stock", "low_stock", "out_of_stock"].includes(
+      stockStatus
+    )
+  ) {
+    throwBadRequest("Invalid stock status filter.");
+  }
+
+  const sort = query.sort ?? "newest";
+
+  if (
+    typeof sort !== "string" ||
+    !Object.hasOwn(SORT_OPTIONS, sort)
+  ) {
+    throwBadRequest("Invalid product sorting option.");
+  }
+
+  const page =
+    query.page === undefined
+      ? DEFAULT_PAGE
+      : parseInteger(query.page, "Page", 1, 1000000);
+
+  const limit =
+    query.limit === undefined
+      ? DEFAULT_LIMIT
+      : parseInteger(query.limit, "Limit", 1, MAX_LIMIT);
+
+  return { search, category, status, stockStatus, sort, page, limit };
+};
+
+const getDashboardStats = async () => {
+  const [
+    totalOrders,
+    totalProducts,
+    totalCustomers,
+    activeOrders,
+    revenueResult,
+    orderValueResult,
+    lowStockCount,
+    recentOrders,
+    lowStockProducts,
+  ] = await Promise.all([
+    Order.countDocuments(),
+
+    Product.countDocuments({ isActive: true }),
+
+    User.countDocuments({ role: "customer" }),
+
+    Order.countDocuments({
+      status: { $in: ["placed", "confirmed", "processing", "shipped"] },
+    }),
+
+    Order.aggregate([
+      {
+        $match: {
+          paymentStatus: "paid",
+          status: { $ne: "cancelled" },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$total" } } },
+    ]),
+
+    Order.aggregate([
+      { $match: { status: { $ne: "cancelled" } } },
+      { $group: { _id: null, total: { $sum: "$total" } } },
+    ]),
+
+    Product.countDocuments({
+      isActive: true,
+      stock: { $lte: LOW_STOCK_THRESHOLD },
+    }),
+
+    Order.find()
+      .select(
+        "orderNumber customer.fullName total status paymentStatus createdAt"
+      )
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(RECENT_ORDERS_LIMIT)
+      .lean(),
+
+    Product.find({
+      isActive: true,
+      stock: { $lte: LOW_STOCK_THRESHOLD },
+    })
+      .select("name sku price stock image category")
+      .sort({ stock: 1, _id: 1 })
+      .limit(LOW_STOCK_LIMIT)
+      .lean(),
+  ]);
+
+  return {
+    stats: {
+      totalRevenue: revenueResult[0]?.total ?? 0,
+      totalOrderValue: orderValueResult[0]?.total ?? 0,
+      totalOrders,
+      activeOrders,
+      totalProducts,
+      totalCustomers,
+      lowStockCount,
+    },
+    recentOrders,
+    lowStockProducts,
+  };
+};
+
+const getAdminProducts = async (query = {}) => {
+  const { search, category, status, stockStatus, sort, page, limit } =
+    normalizeAdminProductQuery(query);
+
+  const filter = {};
+
+  if (status === "active") filter.isActive = true;
+  if (status === "inactive") filter.isActive = false;
+
+  if (search) {
+    const searchRegex = new RegExp(escapeRegex(search), "i");
+
+    filter.$or = [
+      { name: searchRegex },
+      { sku: searchRegex },
+    ];
+  }
+
+  if (category) {
+    filter.category = category;
+  }
+
+  if (stockStatus === "in_stock") {
+    filter.stock = { $gt: LOW_STOCK_THRESHOLD };
+  }
+
+  if (stockStatus === "low_stock") {
+    filter.stock = { $gt: 0, $lte: LOW_STOCK_THRESHOLD };
+  }
+
+  if (stockStatus === "out_of_stock") {
+    filter.stock = 0;
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [products, total, categories] = await Promise.all([
+    Product.find(filter)
+      .sort(SORT_OPTIONS[sort])
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    Product.countDocuments(filter),
+
+    Product.distinct("category"),
+  ]);
+
+  return {
+    products,
+    categories: categories.sort((a, b) => a.localeCompare(b)),
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const getAdminProductById = async (productId) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findById(productId).lean();
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
+  }
+
+  return product;
+};
+
+const updateProductStatus = async (productId, isActive) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findOneAndUpdate(
+    { _id: productId, isActive: !isActive },
+    { $set: { isActive } },
+    { new: true, runValidators: true }
+  ).lean();
+
+  if (!product) {
+    const exists = await Product.exists({ _id: productId });
+
+    if (!exists) {
+      throw new ApiError(
+        HTTP_STATUS.NOT_FOUND,
+        "Product not found."
+      );
+    }
+
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      `Product is already ${isActive ? "active" : "inactive"}.`
+    );
+  }
+
+  return product;
+};
+
+const activateProduct = (productId) =>
+  updateProductStatus(productId, true);
+
+const deactivateProduct = (productId) =>
+  updateProductStatus(productId, false);
+
+const adminService = {
+  getDashboardStats,
+  getAdminProducts,
+  getAdminProductById,
+  activateProduct,
+  deactivateProduct,
+};
+
+export default adminService;
+
+
+========== E:\NexMart\backend\src\services\order\order.service.js ==========
+
+import { randomBytes, randomUUID, createHash } from "node:crypto";
+
+import mongoose from "mongoose";
+
+import Order from "../../models/order/Order.model.js";
+import Product from "../../models/product/Product.model.js";
+
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const MAX_ORDER_QUANTITY = 100;
+const GUEST_TOKEN_BYTES = 32;
+
+const generateOrderNumber = () =>
+  `NEXA-${Date.now().toString().slice(-8)}-${randomUUID()
+    .replace(/-/g, "")
+    .slice(0, 8)
+    .toUpperCase()}`;
+
+const generateGuestAccessToken = () =>
+  randomBytes(GUEST_TOKEN_BYTES).toString("hex");
+
+const hashGuestAccessToken = (token) =>
+  createHash("sha256").update(token).digest("hex");
+
+const normalizeEmail = (email) =>
+  String(email || "").trim().toLowerCase();
+
+const sanitizeOrder = (order) => {
+  if (!order) return null;
+
+  const safeOrder = order.toObject
+    ? order.toObject()
+    : { ...order };
+
+  delete safeOrder.guestAccessTokenHash;
+
+  return safeOrder;
+};
+
+const validateOrderId = (orderId) => {
+  if (!mongoose.isValidObjectId(orderId)) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid order ID."
+    );
+  }
+};
+
+const createOrder = async ({
+  customer,
+  items,
+  deliveryMethod,
+  paymentMethod,
+  userId = null,
+}) => {
+  if (!customer || !Array.isArray(items) || items.length === 0) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Required order information is missing."
+    );
+  }
+
+  if (paymentMethod !== "cod") {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Currently, only Cash on Delivery is available."
+    );
+  }
+
+  if (!["standard", "express"].includes(deliveryMethod)) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid delivery method."
+    );
+  }
+
+  if (items.length > 50) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "An order cannot contain more than 50 products."
+    );
+  }
+
+  const normalizedItems = items.map((item) => ({
+    sku: String(item.sku || "").trim().toUpperCase(),
+    quantity: Number(item.quantity),
+  }));
+
+  const uniqueSkus = new Set(
+    normalizedItems.map((item) => item.sku)
+  );
+
+  if (
+    uniqueSkus.size !== normalizedItems.length ||
+    normalizedItems.some(
+      (item) =>
+        !item.sku ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1 ||
+        item.quantity > MAX_ORDER_QUANTITY
+    )
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid or duplicate products in your order."
+    );
+  }
+
+  const guestAccessToken = userId
+    ? null
+    : generateGuestAccessToken();
+
+  const guestAccessTokenHash = guestAccessToken
+    ? hashGuestAccessToken(guestAccessToken)
+    : null;
+
+  const session = await mongoose.startSession();
+
+  let createdOrder;
+
+  try {
+    await session.withTransaction(async () => {
+      const products = await Product.find({
+        sku: { $in: normalizedItems.map((item) => item.sku) },
+        isActive: true,
+      }).session(session);
+
+      if (products.length !== normalizedItems.length) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "One or more products are unavailable."
+        );
+      }
+
+      const productMap = new Map(
+        products.map((product) => [product.sku, product])
+      );
+
+      const orderItems = [];
+      let subtotal = 0;
+
+      for (const item of normalizedItems) {
+        const product = productMap.get(item.sku);
+
+        if (!product) {
+          throw new ApiError(
+            HTTP_STATUS.NOT_FOUND,
+            `Product ${item.sku} was not found.`
+          );
+        }
+
+        if (product.stock < item.quantity) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            `Insufficient stock for ${product.name}.`
+          );
+        }
+
+        const unitPrice = Number(product.price);
+        const lineTotal = unitPrice * item.quantity;
+
+        if (
+          !Number.isFinite(unitPrice) ||
+          unitPrice < 0 ||
+          !Number.isFinite(lineTotal)
+        ) {
+          throw new ApiError(
+            HTTP_STATUS.INTERNAL_SERVER_ERROR,
+            "Invalid product pricing configuration."
+          );
+        }
+
+        subtotal += lineTotal;
+
+        orderItems.push({
+          product: {
+            productId: product._id,
+            sku: product.sku,
+            name: product.name,
+            slug: product.slug,
+            image: product.image,
+          },
+          quantity: item.quantity,
+          unitPrice,
+          lineTotal,
+        });
+      }
+
+      for (const item of normalizedItems) {
+        const product = productMap.get(item.sku);
+
+        const stockUpdate = await Product.updateOne(
+          {
+            _id: product._id,
+            isActive: true,
+            stock: { $gte: item.quantity },
+          },
+          {
+            $inc: { stock: -item.quantity },
+          },
+          { session }
+        );
+
+        if (stockUpdate.modifiedCount !== 1) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            `Stock changed for ${product.name}. Please try again.`
+          );
+        }
+      }
+
+      const orderData = {
+        orderNumber: generateOrderNumber(),
+        user: userId || null,
+        guestAccessTokenHash,
+        customer: {
+          fullName: customer.fullName.trim(),
+          email: normalizeEmail(customer.email),
+          phone: customer.phone.trim(),
+          addressLine1: customer.addressLine1.trim(),
+          addressLine2: customer.addressLine2?.trim() || "",
+          city: customer.city.trim(),
+          province: customer.province.trim(),
+          postalCode: customer.postalCode.trim(),
+        },
+        items: orderItems,
+        subtotal,
+        deliveryFee: null,
+        total: subtotal,
+        deliveryMethod,
+        paymentMethod: "cod",
+        paymentStatus: "pending",
+        status: "placed",
+        statusHistory: [
+          {
+            status: "placed",
+            timestamp: new Date(),
+            note: "Your order has been successfully placed.",
+          },
+        ],
+      };
+
+      const [order] = await Order.create(
+        [orderData],
+        { session }
+      );
+
+      createdOrder = order;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return {
+    order: sanitizeOrder(createdOrder),
+    guestAccessToken,
+  };
+};
+
+const getCustomerOrders = async (userId) => {
+  return Order.find({ user: userId })
+    .sort({ createdAt: -1 })
+    .lean();
+};
+
+const getCustomerOrderById = async (orderId, userId) => {
+  validateOrderId(orderId);
+
+  const order = await Order.findOne({
+    _id: orderId,
+    user: userId,
+  }).lean();
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found."
+    );
+  }
+
+  return order;
+};
+
+const getGuestOrderConfirmation = async (
+  orderId,
+  accessToken
+) => {
+  validateOrderId(orderId);
+
+  if (
+    typeof accessToken !== "string" ||
+    !/^[a-f\d]{64}$/i.test(accessToken)
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.UNAUTHORIZED,
+      "Invalid order access credentials."
+    );
+  }
+
+  const tokenHash = hashGuestAccessToken(accessToken);
+
+  const order = await Order.findOne({
+    _id: orderId,
+    user: null,
+    guestAccessTokenHash: tokenHash,
+  })
+    .select("+guestAccessTokenHash")
+    .lean();
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found or access denied."
+    );
+  }
+
+  delete order.guestAccessTokenHash;
+
+  return order;
+};
+
+const cancelOrder = async (orderId, userId, reason) => {
+  validateOrderId(orderId);
+
+  const normalizedReason = String(reason || "").trim();
+
+  if (
+    normalizedReason.length < 5 ||
+    normalizedReason.length > 500
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Cancellation reason must contain 5 to 500 characters."
+    );
+  }
+
+  const session = await mongoose.startSession();
+
+  let cancelledOrder;
+
+  try {
+    await session.withTransaction(async () => {
+      const order = await Order.findOne({
+        _id: orderId,
+        user: userId,
+      }).session(session);
+
+      if (!order) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "Order not found."
+        );
+      }
+
+      if (
+        !["placed", "confirmed", "processing"].includes(
+          order.status
+        )
+      ) {
+        throw new ApiError(
+          HTTP_STATUS.BAD_REQUEST,
+          "This order is no longer eligible for cancellation."
+        );
+      }
+
+      for (const item of order.items) {
+        const stockUpdate = await Product.updateOne(
+          { _id: item.product.productId },
+          { $inc: { stock: item.quantity } },
+          { session }
+        );
+
+        if (stockUpdate.matchedCount !== 1) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            "Unable to restore product inventory."
+          );
+        }
+      }
+
+      order.status = "cancelled";
+      order.cancellationReason = normalizedReason;
+
+      order.statusHistory.push({
+        status: "cancelled",
+        timestamp: new Date(),
+        note: normalizedReason,
+      });
+
+      await order.save({ session });
+
+      cancelledOrder = order;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return sanitizeOrder(cancelledOrder);
+};
+
+const orderService = {
+  createOrder,
+  getCustomerOrders,
+  getCustomerOrderById,
+  getGuestOrderConfirmation,
+  cancelOrder,
+};
+
+export default orderService;
+
+
+========== E:\NexMart\backend\src\validators\order\order.validator.js ==========
+
+import { z } from "zod";
+
+const customerSchema = z.object({
+  fullName: z.string().trim().min(3).max(80),
+  email: z.string().trim().email().max(254),
+  phone: z.string().trim().min(7).max(20),
+  addressLine1: z.string().trim().min(5).max(200),
+  addressLine2: z.string().trim().max(200).optional().default(""),
+  city: z.string().trim().min(2).max(80),
+  province: z.string().trim().min(2).max(80),
+  postalCode: z.string().trim().min(2).max(20),
+}).strict();
+
+const orderItemSchema = z.object({
+  sku: z.string().trim().min(3).max(40).transform((value) =>
+    value.toUpperCase()
+  ),
+  quantity: z.number().int().min(1).max(100),
+}).strict();
+
+export const createOrderSchema = z.object({
+  customer: customerSchema,
+  items: z.array(orderItemSchema).min(1).max(50),
+  deliveryMethod: z.enum(["standard", "express"]),
+  paymentMethod: z.literal("cod"),
+}).strict();
+
+export const cancelOrderSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+}).strict();
+
+export const guestOrderConfirmationSchema = z.object({
+  accessToken: z.string().regex(
+    /^[a-f\d]{64}$/i,
+    "Invalid guest order access token."
+  ),
+}).strict();
+

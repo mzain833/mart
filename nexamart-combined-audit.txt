@@ -1,0 +1,3474 @@
+﻿
+==================== frontend\src\features\admin\components\AdminProductTable.jsx ====================
+
+import {
+  AlertTriangle,
+  Edit3,
+  LoaderCircle,
+  Package,
+  Power,
+  PowerOff,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+
+const formatCurrency = (value = 0) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0);
+
+const getStockStatus = (value) => {
+  const stock = Math.max(0, Number(value) || 0);
+
+  if (stock === 0) {
+    return { label: "Out of stock", className: "out" };
+  }
+
+  if (stock <= 5) {
+    return { label: "Low stock", className: "low" };
+  }
+
+  return { label: "In stock", className: "available" };
+};
+
+const AdminProductTable = ({
+  products = [],
+  isLoading,
+  actionLoading,
+  onToggleStatus,
+}) => {
+  if (isLoading && products.length === 0) {
+    return (
+      <div className="admin-products__state" role="status">
+        <LoaderCircle size={28} className="is-spinning" />
+        <span>Loading products...</span>
+      </div>
+    );
+  }
+
+  if (!isLoading && products.length === 0) {
+    return (
+      <div className="admin-products__state">
+        <Package size={34} />
+        <strong>No products found</strong>
+        <span>Try changing your search or filters.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-products__table-wrap">
+      <table className="admin-products__table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Category</th>
+            <th>Price</th>
+            <th>Inventory</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {products.map((product) => {
+            const stock = getStockStatus(product.stock);
+            const isUpdating = actionLoading === product._id;
+
+            return (
+              <tr key={product._id}>
+                <td>
+                  <div className="admin-products__product">
+                    {product.image ? (
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="admin-products__image-placeholder">
+                        <Package size={19} />
+                      </span>
+                    )}
+
+                    <div>
+                      <strong>{product.name}</strong>
+                      <span>{product.slug}</span>
+                    </div>
+                  </div>
+                </td>
+
+                <td className="admin-products__sku">
+                  {product.sku || "â€”"}
+                </td>
+
+                <td>{product.category || "Uncategorized"}</td>
+
+                <td className="admin-products__price">
+                  {formatCurrency(product.price)}
+                </td>
+
+                <td>
+                  <span
+                    className={`admin-products__stock admin-products__stock--${stock.className}`}
+                  >
+                    {stock.className === "out" && (
+                      <AlertTriangle size={13} />
+                    )}
+                    {Number(product.stock) || 0} Â· {stock.label}
+                  </span>
+                </td>
+
+                <td>
+                  <span
+                    className={`admin-products__status ${
+                      product.isActive ? "is-active" : "is-inactive"
+                    }`}
+                  >
+                    <span />
+                    {product.isActive ? "Active" : "Inactive"}
+                  </span>
+                </td>
+
+                <td>
+                  <div className="admin-products__actions">
+                    <Link
+                      to={`/admin/products/${product._id}/edit`}
+                      className="admin-products__edit"
+                      aria-label={`Edit ${product.name}`}
+                    >
+                      <Edit3 size={15} />
+                      <span>Edit</span>
+                    </Link>
+
+                    <button
+                      type="button"
+                      className={`admin-products__action ${
+                        product.isActive
+                          ? "is-deactivate"
+                          : "is-activate"
+                      }`}
+                      onClick={() => onToggleStatus(product)}
+                      disabled={Boolean(actionLoading)}
+                      aria-busy={isUpdating}
+                    >
+                      {isUpdating ? (
+                        <LoaderCircle
+                          size={15}
+                          className="is-spinning"
+                        />
+                      ) : product.isActive ? (
+                        <PowerOff size={15} />
+                      ) : (
+                        <Power size={15} />
+                      )}
+
+                      <span>
+                        {product.isActive ? "Deactivate" : "Activate"}
+                      </span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+export default AdminProductTable;
+
+
+==================== frontend\src\features\admin\pages\AdminCategories.jsx ====================
+
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Edit3,
+  FolderOpen,
+  LoaderCircle,
+  Plus,
+  Power,
+  PowerOff,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+
+import useAdminCategories from "../hooks/useAdminCategories";
+
+import "./admin-categories.css";
+
+const AdminCategories = () => {
+  const {
+    categories,
+    isLoading,
+    actionLoading,
+    error,
+    refreshCategories,
+    toggleCategoryStatus,
+  } = useAdminCategories();
+
+  const activeCount = categories.filter(
+    (category) => category.isActive
+  ).length;
+
+  return (
+    <main className="admin-categories">
+      <div className="admin-categories__container">
+        <header className="admin-categories__header">
+          <div>
+            <Link to="/admin" className="admin-categories__back">
+              <ArrowLeft size={15} />
+              Back to dashboard
+            </Link>
+
+            <span className="admin-categories__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>Category Management</h1>
+
+            <p>
+              Organize your catalog and manage product categories.
+            </p>
+          </div>
+
+          <div className="admin-categories__header-actions">
+            <div className="admin-categories__security">
+              <ShieldCheck size={17} />
+              Authorized Administrator
+            </div>
+
+            <button
+              type="button"
+              className="admin-categories__refresh"
+              onClick={refreshCategories}
+              disabled={isLoading}
+            >
+              <RefreshCw
+                size={16}
+                className={isLoading ? "is-spinning" : ""}
+              />
+              Refresh
+            </button>
+
+            <Link
+              to="/admin/categories/new"
+              className="admin-categories__add"
+            >
+              <Plus size={17} />
+              Add Category
+            </Link>
+          </div>
+        </header>
+
+        <section className="admin-categories__overview">
+          <div>
+            <span>Total categories</span>
+            <strong>{categories.length}</strong>
+          </div>
+
+          <div>
+            <span>Active categories</span>
+            <strong>{activeCount}</strong>
+          </div>
+
+          <div>
+            <span>Inactive categories</span>
+            <strong>{categories.length - activeCount}</strong>
+          </div>
+        </section>
+
+        <section className="admin-categories__panel">
+          <div className="admin-categories__panel-heading">
+            <div>
+              <h2>Store Categories</h2>
+              <p>Manage category information and visibility.</p>
+            </div>
+
+            <FolderOpen size={21} />
+          </div>
+
+          {error && (
+            <div className="admin-categories__error" role="alert">
+              <AlertTriangle size={18} />
+              <span>{error}</span>
+
+              <button type="button" onClick={refreshCategories}>
+                Try again
+              </button>
+            </div>
+          )}
+
+          {isLoading && categories.length === 0 ? (
+            <div className="admin-categories__state">
+              <LoaderCircle className="is-spinning" size={28} />
+              <span>Loading categories...</span>
+            </div>
+          ) : categories.length === 0 ? (
+            <div className="admin-categories__state">
+              <FolderOpen size={34} />
+              <strong>No categories found</strong>
+              <span>Create your first store category.</span>
+
+              <Link to="/admin/categories/new">
+                <Plus size={16} />
+                Create Category
+              </Link>
+            </div>
+          ) : (
+            <div className="admin-categories__table-wrap">
+              <table className="admin-categories__table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Slug</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {categories.map((category) => {
+                    const isUpdating = actionLoading === category._id;
+
+                    return (
+                      <tr key={category._id}>
+                        <td>
+                          <div className="admin-categories__category">
+                            {category.image ? (
+                              <img
+                                src={category.image}
+                                alt={category.name}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="admin-categories__placeholder">
+                                <FolderOpen size={20} />
+                              </div>
+                            )}
+
+                            <strong>{category.name}</strong>
+                          </div>
+                        </td>
+
+                        <td className="admin-categories__slug">
+                          {category.slug}
+                        </td>
+
+                        <td className="admin-categories__description">
+                          {category.description || "â€”"}
+                        </td>
+
+                        <td>
+                          <span
+                            className={`admin-categories__status ${
+                              category.isActive
+                                ? "is-active"
+                                : "is-inactive"
+                            }`}
+                          >
+                            <span />
+                            {category.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+
+                        
+<td>
+  <div className="admin-categories__actions">
+    <Link
+      to={`/admin/categories/${category._id}/edit`}
+      className="admin-categories__edit"
+    >
+      <Edit3 size={15} />
+      <span>Edit</span>
+    </Link>
+
+    <button
+      type="button"
+      className={`admin-categories__action ${
+        category.isActive
+          ? "is-deactivate"
+          : "is-activate"
+      }`}
+      onClick={() => toggleCategoryStatus(category)}
+      disabled={Boolean(actionLoading)}
+      aria-busy={isUpdating}
+    >
+      {isUpdating ? (
+        <LoaderCircle size={15} className="is-spinning" />
+      ) : category.isActive ? (
+        <PowerOff size={15} />
+      ) : (
+        <Power size={15} />
+      )}
+
+      <span>
+        {category.isActive ? "Deactivate" : "Activate"}
+      </span>
+    </button>
+  </div>
+</td>
+
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <footer className="admin-categories__footer">
+          <FolderOpen size={16} />
+          <span>NexaMart secure category management workspace</span>
+        </footer>
+      </div>
+    </main>
+  );
+};
+
+export default AdminCategories;
+
+
+==================== frontend\src\features\admin\pages\AdminCustomers.jsx ====================
+
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  Filter,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Users,
+  X,
+} from "lucide-react";
+
+import useAdminCustomers from "../hooks/useAdminCustomers";
+import "./admin-customers.css";
+
+const SORT_OPTIONS = [
+  ["newest", "Newest first"],
+  ["oldest", "Oldest first"],
+  ["name_asc", "Name A-Z"],
+  ["name_desc", "Name Z-A"],
+];
+
+const formatDate = (value) => {
+  if (!value) return "â€”";
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? "â€”"
+    : new Intl.DateTimeFormat("en-PK", {
+        dateStyle: "medium",
+      }).format(date);
+};
+
+const formatPrice = (amount) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(Number(amount) || 0);
+
+const AdminCustomers = () => {
+  const {
+    customers,
+    filters,
+    searchInput,
+    setSearchInput,
+    pagination,
+    isLoading,
+    error,
+    updateFilter,
+    applySearch,
+    changePage,
+    refreshCustomers,
+  } = useAdminCustomers();
+
+  const [showFilters, setShowFilters] = useState(false);
+
+  const hasActiveFilters = useMemo(
+    () => Boolean(filters.status || filters.search),
+    [filters.status, filters.search]
+  );
+
+  const clearFilters = () => {
+    setSearchInput("");
+
+    updateFilter("search", "");
+    updateFilter("status", "");
+    updateFilter("sort", "newest");
+  };
+
+  return (
+    <main className="admin-customers">
+      <div className="admin-customers__container">
+        <header className="admin-customers__header">
+          <div>
+            
+<Link
+  to={`/admin/customers/${customer._id}`}
+  className="admin-customers__view"
+>
+  <Eye size={15} />
+  <span>View</span>
+</Link>
+
+            <span className="admin-customers__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>Customer Management</h1>
+
+            <p>
+              Manage customer accounts, monitor activity and review
+              customer relationships.
+            </p>
+          </div>
+
+          <div className="admin-customers__header-actions">
+            <span className="admin-customers__secure">
+              <ShieldCheck size={16} />
+              Admin access
+            </span>
+
+            <button
+              type="button"
+              className="admin-customers__button"
+              onClick={refreshCustomers}
+              disabled={isLoading}
+            >
+              <RefreshCw
+                size={16}
+                className={isLoading ? "is-spinning" : ""}
+              />
+              Refresh
+            </button>
+          </div>
+        </header>
+
+        <section className="admin-customers__overview">
+          <div className="admin-customers__overview-icon">
+            <Users size={22} />
+          </div>
+
+          <div>
+            <span>Total matching customers</span>
+            <strong>
+              {pagination.total.toLocaleString("en-PK")}
+            </strong>
+            <small>
+              {pagination.pages
+                ? `Page ${pagination.page} of ${pagination.pages}`
+                : "No pages available"}
+            </small>
+          </div>
+        </section>
+
+        <section className="admin-customers__panel">
+          <div className="admin-customers__panel-header">
+            <div>
+              <h2>All customers</h2>
+              <p>Search and manage registered customer accounts.</p>
+            </div>
+
+            <button
+              type="button"
+              className="admin-customers__filter-toggle"
+              onClick={() => setShowFilters((previous) => !previous)}
+              aria-expanded={showFilters}
+            >
+              <Filter size={16} />
+              Filters
+            </button>
+          </div>
+
+          <form
+            className="admin-customers__search"
+            onSubmit={applySearch}
+          >
+            <Search size={18} />
+
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search name, email or phone..."
+              aria-label="Search customers"
+            />
+
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput("");
+                  updateFilter("search", "");
+                }}
+                aria-label="Clear search"
+              >
+                <X size={16} />
+              </button>
+            )}
+
+            <button type="submit" className="admin-customers__search-submit">
+              Search
+            </button>
+          </form>
+
+          {showFilters && (
+            <div className="admin-customers__filters">
+              <label>
+                Account status
+                <select
+                  value={filters.status}
+                  onChange={(event) =>
+                    updateFilter("status", event.target.value)
+                  }
+                >
+                  <option value="">All customers</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+
+              <label>
+                Sort by
+                <select
+                  value={filters.sort}
+                  onChange={(event) =>
+                    updateFilter("sort", event.target.value)
+                  }
+                >
+                  {SORT_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  className="admin-customers__reset"
+                  onClick={clearFilters}
+                >
+                  <X size={15} />
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div className="admin-customers__error" role="alert">
+              <span>{error}</span>
+              <button type="button" onClick={refreshCustomers}>
+                Try again
+              </button>
+            </div>
+          )}
+
+          <div className="admin-customers__table-wrap">
+            <table className="admin-customers__table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Phone</th>
+                  <th>Orders</th>
+                  <th>Order value</th>
+                  <th>Account</th>
+                  <th>Joined</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan="7" className="admin-customers__state">
+                      <LoaderCircle className="is-spinning" size={25} />
+                      Loading customers...
+                    </td>
+                  </tr>
+                ) : customers.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="admin-customers__state">
+                      <Users size={28} />
+                      <strong>No customers found</strong>
+                      <span>
+                        Try changing your search or filter criteria.
+                      </span>
+                    </td>
+                  </tr>
+                ) : (
+                  customers.map((customer) => (
+                    <tr key={customer._id}>
+                      <td>
+                        <div className="admin-customers__identity">
+                          <span className="admin-customers__avatar">
+                            {(customer.fullName || "C")
+                              .charAt(0)
+                              .toUpperCase()}
+                          </span>
+
+                          <div>
+                            <strong>{customer.fullName}</strong>
+                            <span>{customer.email}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>{customer.phone || "â€”"}</td>
+
+                      <td>
+                        <strong>
+                          {customer.orderStats?.totalOrders ?? 0}
+                        </strong>
+                      </td>
+
+                      <td className="admin-customers__amount">
+                        {formatPrice(
+                          customer.orderStats?.totalOrderValue
+                        )}
+                      </td>
+
+                      <td>
+                        <span
+                          className={`admin-customers__status ${
+                            customer.isActive ? "is-active" : "is-inactive"
+                          }`}
+                        >
+                          {customer.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+
+                      <td>{formatDate(customer.createdAt)}</td>
+
+                      <td>
+                        <Link
+                          to={`/admin/customers/${customer._id}`}
+                          className="admin-customers__view"
+                          aria-label={`View ${customer.fullName}`}
+                        >
+                          <Eye size={17} />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <footer className="admin-customers__pagination">
+            <span>
+              Showing {customers.length} of {pagination.total} customers
+            </span>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => changePage(pagination.page - 1)}
+                disabled={isLoading || !pagination.hasPreviousPage}
+              >
+                <ArrowLeft size={16} />
+                Previous
+              </button>
+
+              <span>
+                {pagination.page} / {Math.max(pagination.pages, 1)}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => changePage(pagination.page + 1)}
+                disabled={isLoading || !pagination.hasNextPage}
+              >
+                Next
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </main>
+  );
+};
+
+export default AdminCustomers;
+
+
+==================== frontend\src\features\admin\pages\admin-products.css ====================
+
+.admin-products {
+  min-height: 100vh;
+  padding: 42px;
+  background: #f7f8fa;
+  color: #172033;
+}
+
+.admin-products__container {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.admin-products__header,
+.admin-products__header-actions,
+.admin-products__security,
+.admin-products__refresh,
+.admin-products__panel-heading,
+.admin-products__footer {
+  display: flex;
+  align-items: center;
+}
+
+.admin-products__header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.admin-products__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 20px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.admin-products__back:hover {
+  color: #172033;
+}
+
+.admin-products__eyebrow {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 1.7px;
+}
+
+.admin-products__header h1 {
+  margin: 11px 0 7px;
+  font-size: clamp(27px, 3vw, 34px);
+  font-weight: 750;
+  letter-spacing: -1.2px;
+}
+
+.admin-products__header p,
+.admin-products__panel-heading p {
+  margin: 0;
+  color: #7b8495;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.admin-products__header-actions {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-products__security {
+  gap: 8px;
+  padding: 11px 14px;
+  border: 1px solid #d9e9df;
+  border-radius: 9px;
+  background: #f0f8f2;
+  color: #267446;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.admin-products__refresh {
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 15px;
+  border: 1px solid #e1e5eb;
+  border-radius: 9px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-products__refresh:hover {
+  background: #f8fafc;
+}
+
+.admin-products__refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.admin-products__overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 17px;
+  margin-top: 35px;
+}
+
+.admin-products__overview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 20px 22px;
+  border: 1px solid #e9ecf1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgb(15 23 42 / 3%);
+}
+
+.admin-products__overview span {
+  color: #7b8495;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-products__overview strong {
+  font-size: 25px;
+  font-weight: 750;
+  letter-spacing: -0.6px;
+}
+
+.admin-products__overview small {
+  color: #929baa;
+  font-size: 11px;
+}
+
+.admin-products__panel {
+  margin-top: 25px;
+  overflow: hidden;
+  border: 1px solid #e9ecf1;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgb(15 23 42 / 3%);
+}
+
+.admin-products__panel-heading {
+  justify-content: space-between;
+  padding: 23px;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.admin-products__panel-heading h2 {
+  margin: 0 0 5px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.admin-products__panel-heading > svg {
+  color: #94a3b8;
+}
+
+.admin-products__filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.7fr) repeat(4, minmax(135px, 1fr));
+  gap: 11px;
+  padding: 19px 22px;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.admin-products__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 43px;
+  padding: 0 12px;
+  border: 1px solid #e1e5eb;
+  border-radius: 8px;
+  color: #94a3b8;
+}
+
+.admin-products__search:focus-within {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgb(148 163 184 / 12%);
+}
+
+.admin-products__search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+}
+
+.admin-products__search input::placeholder {
+  color: #a0a8b5;
+}
+
+.admin-products__filters select {
+  width: 100%;
+  min-width: 0;
+  min-height: 43px;
+  padding: 0 10px;
+  border: 1px solid #e1e5eb;
+  border-radius: 8px;
+  outline: 0;
+  background: #fff;
+  color: #475569;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.admin-products__filters select:focus {
+  border-color: #94a3b8;
+}
+
+.admin-products__table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.admin-products__table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-products__table th {
+  padding: 14px 17px;
+  background: #fafbfc;
+  color: #8a94a4;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.admin-products__table td {
+  padding: 15px 17px;
+  border-top: 1px solid #f0f2f5;
+  color: #596579;
+  font-size: 11px;
+}
+
+.admin-products__product {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 210px;
+}
+
+.admin-products__product img {
+  width: 43px;
+  height: 43px;
+  flex-shrink: 0;
+  border: 1px solid #eef0f4;
+  border-radius: 8px;
+  background: #f8fafc;
+  object-fit: contain;
+}
+
+.admin-products__product > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.admin-products__product strong {
+  max-width: 220px;
+  overflow: hidden;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.admin-products__product span {
+  max-width: 220px;
+  overflow: hidden;
+  color: #929baa;
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.admin-products__sku {
+  color: #475569 !important;
+  font-weight: 650;
+}
+
+.admin-products__price {
+  color: #172033 !important;
+  font-weight: 700;
+}
+
+.admin-products__stock,
+.admin-products__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.admin-products__stock--available {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.admin-products__stock--low {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.admin-products__stock--out {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.admin-products__status > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.admin-products__status.is-active {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.admin-products__status.is-inactive {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.admin-products__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 33px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.admin-products__action.is-deactivate {
+  border-color: #fee2e2;
+  background: #fffafa;
+  color: #dc2626;
+}
+
+.admin-products__action.is-deactivate:hover {
+  background: #fef2f2;
+}
+
+.admin-products__action.is-activate {
+  border-color: #d1fae5;
+  background: #f0fdf4;
+  color: #047857;
+}
+
+.admin-products__action.is-activate:hover {
+  background: #dcfce7;
+}
+
+.admin-products__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.admin-products__state {
+  display: flex;
+  min-height: 230px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.admin-products__state strong {
+  color: #475569;
+  font-size: 14px;
+}
+
+.admin-products__error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 22px;
+  padding: 14px;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.admin-products__error button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #991b1b;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-products__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 17px 22px;
+  border-top: 1px solid #eef0f4;
+  color: #8993a3;
+  font-size: 11px;
+}
+
+.admin-products__pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.admin-products__pagination strong {
+  color: #475569;
+  font-size: 11px;
+}
+
+.admin-products__pagination strong span {
+  color: #a0a8b5;
+}
+
+.admin-products__pagination button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #e1e5eb;
+  border-radius: 7px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+}
+
+.admin-products__pagination button:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
+.admin-products__pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.admin-products__footer {
+  justify-content: center;
+  gap: 8px;
+  margin-top: 28px;
+  color: #929baa;
+  font-size: 11px;
+}
+
+@media (max-width: 1100px) {
+  .admin-products {
+    padding: 30px;
+  }
+
+  .admin-products__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-products__search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-products {
+    padding: 25px 16px;
+  }
+
+  .admin-products__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-products__header-actions {
+    width: 100%;
+  }
+
+  .admin-products__overview {
+    grid-template-columns: 1fr;
+    gap: 11px;
+  }
+
+  .admin-products__filters {
+    grid-template-columns: 1fr;
+    padding: 15px;
+  }
+
+  .admin-products__search {
+    grid-column: auto;
+  }
+
+  .admin-products__panel-heading {
+    padding: 18px;
+  }
+
+  .admin-products__pagination {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 15px;
+  }
+}
+.admin-products__action {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.admin-products__action:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.admin-products__action.is-deactivate {
+  border-color: #fee2e2;
+  background: #fffafa;
+  color: #dc2626;
+}
+
+.admin-products__action.is-deactivate:hover {
+  background: #fef2f2;
+}
+
+.admin-products__action.is-activate {
+  border-color: #d1fae5;
+  background: #f0fdf4;
+  color: #047857;
+}
+
+.admin-products__action.is-activate:hover {
+  background: #dcfce7;
+}
+
+.admin-products__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+
+.admin-products__add {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 15px;
+  border: 1px solid #172033;
+  border-radius: 9px;
+  background: #172033;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.admin-products__add:hover {
+  background: #29364d;
+  transform: translateY(-1px);
+}
+
+.admin-products__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-products__edit {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid #e1e5eb;
+  border-radius: 9px;
+  background: #fff;
+  color: #475569;
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.admin-products__edit:hover {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+.admin-products .is-spinning {
+  animation: admin-products-spin 1s linear infinite;
+}
+
+@keyframes admin-products-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-products__header-actions {
+    align-items: stretch;
+  }
+
+  .admin-products__add,
+  .admin-products__refresh {
+    flex: 1;
+  }
+}
+
+
+.admin-products__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-products__edit,
+.admin-products__action {
+  display: inline-flex;
+  min-height: 35px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #e5e8ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.admin-products__edit:hover {
+  background: #f1f5f9;
+  color: #172033;
+}
+
+.admin-products__action.is-deactivate {
+  border-color: #fee2e2;
+  background: #fffafa;
+  color: #dc2626;
+}
+
+.admin-products__action.is-activate {
+  border-color: #d1fae5;
+  background: #f0fdf4;
+  color: #047857;
+}
+
+.admin-products__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-products__image-placeholder {
+  display: grid;
+  width: 43px;
+  height: 43px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 9px;
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+@media (max-width: 640px) {
+  .admin-products__actions {
+    min-width: 175px;
+  }
+}
+
+
+==================== frontend\src\features\admin\pages\admin-categories.css ====================
+
+.admin-categories,
+.admin-category-form {
+  min-height: 100vh;
+  padding: 42px 24px 64px;
+  background: #f7f8fa;
+  color: #172033;
+}
+
+.admin-categories__container,
+.admin-category-form__container {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+.admin-categories__header,
+.admin-category-form__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+
+.admin-categories__back,
+.admin-category-form__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 22px;
+  color: #657087;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.admin-categories__back:hover,
+.admin-category-form__back:hover {
+  color: #172033;
+}
+
+.admin-categories__eyebrow,
+.admin-category-form__eyebrow {
+  display: block;
+  margin-bottom: 9px;
+  color: #8a93a5;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.admin-categories__header h1,
+.admin-category-form__header h1 {
+  margin: 0;
+  font-size: clamp(27px, 4vw, 36px);
+  font-weight: 750;
+  letter-spacing: -1.2px;
+}
+
+.admin-categories__header p,
+.admin-category-form__header p {
+  margin: 9px 0 0;
+  color: #778196;
+  font-size: 14px;
+}
+
+.admin-categories__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-categories__security,
+.admin-category-form__security {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #647087;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-categories__refresh,
+.admin-categories__add,
+.admin-category-form__submit,
+.admin-category-form__cancel {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 15px;
+  border: 1px solid #e5e8ef;
+  border-radius: 9px;
+  background: #fff;
+  color: #344054;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.admin-categories__refresh:hover,
+.admin-category-form__cancel:hover {
+  background: #f0f2f6;
+}
+
+.admin-categories__add,
+.admin-category-form__submit {
+  border-color: #172033;
+  background: #172033;
+  color: #fff;
+}
+
+.admin-categories__add:hover,
+.admin-category-form__submit:hover {
+  background: #2b3851;
+}
+
+.admin-categories button:disabled,
+.admin-category-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-categories__overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.admin-categories__overview > div {
+  display: grid;
+  gap: 9px;
+  padding: 20px;
+  border: 1px solid #e9ebf0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.admin-categories__overview span {
+  color: #778196;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-categories__overview strong {
+  font-size: 27px;
+  font-weight: 750;
+  letter-spacing: -0.8px;
+}
+
+.admin-categories__panel,
+.admin-category-form__panel {
+  overflow: hidden;
+  border: 1px solid #e9ebf0;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.admin-categories__panel-heading,
+.admin-category-form__section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 23px 25px;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.admin-categories__panel-heading h2,
+.admin-category-form__section-heading h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.admin-categories__panel-heading p,
+.admin-category-form__section-heading p {
+  margin: 6px 0 0;
+  color: #8790a1;
+  font-size: 12px;
+}
+
+.admin-categories__table-wrap {
+  overflow-x: auto;
+}
+
+.admin-categories__table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-categories__table th {
+  padding: 14px 20px;
+  background: #fafbfc;
+  color: #7b8496;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-categories__table td {
+  padding: 15px 20px;
+  border-top: 1px solid #eff1f4;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.admin-categories__category {
+  display: flex;
+  min-width: 170px;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-categories__category img,
+.admin-categories__placeholder {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 9px;
+  background: #f0f2f6;
+  object-fit: cover;
+}
+
+.admin-categories__placeholder {
+  display: grid;
+  place-items: center;
+  color: #8992a3;
+}
+
+.admin-categories__category strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-categories__slug {
+  color: #6d778b;
+  font-family: monospace;
+}
+
+.admin-categories__description {
+  max-width: 260px;
+  color: #7b8496;
+  line-height: 1.5;
+}
+
+.admin-categories__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-categories__status > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a36a;
+}
+
+.admin-categories__status.is-inactive > span {
+  background: #a0a6b2;
+}
+
+.admin-categories__status.is-active {
+  color: #16845b;
+}
+
+.admin-categories__status.is-inactive {
+  color: #7e8797;
+}
+
+.admin-categories__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-categories__edit,
+.admin-categories__action {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #e8ebf0;
+  border-radius: 8px;
+  background: #fff;
+  color: #687388;
+  cursor: pointer;
+}
+
+.admin-categories__edit:hover {
+  background: #f0f3f8;
+  color: #172033;
+}
+
+.admin-categories__action.is-deactivate {
+  color: #c05a5a;
+}
+
+.admin-categories__action.is-activate {
+  color: #16845b;
+}
+
+.admin-categories__state,
+.admin-category-form__state {
+  display: flex;
+  min-height: 230px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #8992a3;
+  font-size: 13px;
+}
+
+.admin-categories__state strong {
+  color: #344054;
+  font-size: 15px;
+}
+
+.admin-categories__state a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  color: #344054;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.admin-categories__error,
+.admin-category-form__error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 22px;
+  padding: 13px 15px;
+  border: 1px solid #f2d4d4;
+  border-radius: 9px;
+  background: #fff8f8;
+  color: #a33e3e;
+  font-size: 12px;
+}
+
+.admin-categories__error button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-categories__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  color: #929aaa;
+  font-size: 11px;
+}
+
+.admin-category-form__panel {
+  padding-bottom: 24px;
+}
+
+.admin-category-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  padding: 24px 25px 0;
+}
+
+.admin-category-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 22px 25px 0;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-category-form__grid .admin-category-form__field {
+  margin: 0;
+}
+
+.admin-category-form__field input,
+.admin-category-form__field textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 13px;
+  border: 1px solid #e1e5ec;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 450;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-category-form__field textarea {
+  min-height: 115px;
+  resize: vertical;
+}
+
+.admin-category-form__field input:focus,
+.admin-category-form__field textarea:focus {
+  border-color: #8796b0;
+  box-shadow: 0 0 0 3px rgb(74 94 130 / 9%);
+}
+
+.admin-category-form__field small {
+  color: #929aaa;
+  font-size: 11px;
+  font-weight: 450;
+}
+
+.admin-category-form__preview {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin: 18px 25px 0;
+  color: #778196;
+  font-size: 11px;
+}
+
+.admin-category-form__preview img {
+  width: 70px;
+  height: 70px;
+  border-radius: 9px;
+  background: #f0f2f6;
+  object-fit: cover;
+}
+
+.admin-category-form__preview span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-category-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 28px 25px 0;
+  padding-top: 20px;
+  border-top: 1px solid #edf0f4;
+}
+
+.is-spinning {
+  animation: admin-category-spin 1s linear infinite;
+}
+
+@keyframes admin-category-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-categories,
+  .admin-category-form {
+    padding: 25px 15px 45px;
+  }
+
+  .admin-categories__header,
+  .admin-category-form__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-categories__header-actions {
+    justify-content: flex-start;
+  }
+
+  .admin-categories__security,
+  .admin-category-form__security {
+    width: 100%;
+  }
+
+  .admin-categories__overview {
+    gap: 9px;
+  }
+
+  .admin-categories__overview > div {
+    padding: 14px;
+  }
+
+  .admin-categories__overview strong {
+    font-size: 22px;
+  }
+
+  .admin-category-form__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-categories__overview {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-categories__header-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .admin-categories__refresh,
+  .admin-categories__add {
+    width: 100%;
+  }
+
+  .admin-category-form__grid {
+    padding: 20px 18px 0;
+  }
+
+  .admin-category-form__field {
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+
+  .admin-category-form__actions {
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+}
+
+
+.admin-categories__actions {
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.admin-categories__edit,
+.admin-categories__action {
+  display: inline-flex;
+  width: auto;
+  min-height: 35px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #e5e8ef;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.admin-categories__edit {
+  color: #475569;
+}
+
+.admin-categories__action.is-deactivate {
+  border-color: #fee2e2;
+  background: #fffafa;
+}
+
+.admin-categories__action.is-activate {
+  border-color: #d1fae5;
+  background: #f0fdf4;
+}
+
+.admin-categories__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+
+==================== frontend\src\features\admin\pages\admin-customers.css ====================
+
+.admin-customers {
+  min-height: 100vh;
+  padding: 42px 24px 64px;
+  background: #f7f8fa;
+  color: #172033;
+}
+
+.admin-customers__container {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+}
+
+.admin-customers__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+
+.admin-customers__header h1 {
+  margin: 0;
+  color: #101828;
+  font-size: clamp(28px, 4vw, 38px);
+  font-weight: 750;
+  letter-spacing: -1.2px;
+}
+
+.admin-customers__header p {
+  margin: 10px 0 0;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.admin-customers__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 22px;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.admin-customers__back:hover {
+  color: #172033;
+}
+
+.admin-customers__eyebrow {
+  display: block;
+  margin-bottom: 9px;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.7px;
+}
+
+.admin-customers__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.admin-customers__secure {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #16734b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-customers__button,
+.admin-customers__filter-toggle {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 15px;
+  border: 1px solid #e4e7ec;
+  border-radius: 9px;
+  background: #fff;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-customers__button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-customers__overview {
+  width: fit-content;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  margin-bottom: 24px;
+  padding: 19px 23px;
+  border: 1px solid #eaecf0;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.admin-customers__overview-icon {
+  width: 45px;
+  height: 45px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: #eff4ff;
+  color: #3157a4;
+}
+
+.admin-customers__overview > div:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-customers__overview span,
+.admin-customers__overview small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.admin-customers__overview strong {
+  color: #101828;
+  font-size: 23px;
+  font-weight: 750;
+}
+
+.admin-customers__panel {
+  overflow: hidden;
+  border: 1px solid #eaecf0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgb(16 24 40 / 3%);
+}
+
+.admin-customers__panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 23px 24px;
+}
+
+.admin-customers__panel-header h2 {
+  margin: 0;
+  color: #101828;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.admin-customers__panel-header p {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.admin-customers__search {
+  min-height: 47px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 0 24px 18px;
+  padding: 0 7px 0 14px;
+  border: 1px solid #e4e7ec;
+  border-radius: 9px;
+  color: #98a2b3;
+}
+
+.admin-customers__search:focus-within {
+  border-color: #8197c7;
+  box-shadow: 0 0 0 3px rgb(49 87 164 / 9%);
+}
+
+.admin-customers__search input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #172033;
+  font: inherit;
+  font-size: 13px;
+}
+
+.admin-customers__search button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+}
+
+.admin-customers__search-submit {
+  min-height: 34px;
+  padding: 0 16px;
+  border: 0 !important;
+  border-radius: 7px;
+  background: #172b4d !important;
+  color: #fff !important;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-customers__filters {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0 24px 22px;
+  padding: 19px;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.admin-customers__filters label {
+  min-width: 190px;
+  display: grid;
+  flex: 1;
+  gap: 7px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.admin-customers__filters select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #344054;
+  font: inherit;
+  font-size: 12px;
+}
+
+.admin-customers__reset {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-customers__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin: 0 24px 18px;
+  padding: 13px 15px;
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  background: #fef3f2;
+  color: #b42318;
+  font-size: 13px;
+}
+
+.admin-customers__error button {
+  border: 0;
+  background: transparent;
+  color: #912018;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.admin-customers__table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid #eaecf0;
+}
+
+.admin-customers__table {
+  width: 100%;
+  min-width: 950px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-customers__table th {
+  padding: 14px 17px;
+  background: #fafbfc;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-customers__table td {
+  padding: 15px 17px;
+  border-top: 1px solid #f0f1f3;
+  color: #344054;
+  font-size: 12px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.admin-customers__table tbody tr:hover {
+  background: #fcfcfd;
+}
+
+.admin-customers__identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 210px;
+}
+
+.admin-customers__identity > div {
+  display: grid;
+  gap: 5px;
+}
+
+.admin-customers__identity strong {
+  color: #172033;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-customers__identity span:last-child {
+  color: #667085;
+  font-size: 11px;
+}
+
+.admin-customers__avatar {
+  width: 37px;
+  height: 37px;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 50%;
+  background: #eff4ff;
+  color: #3157a4;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.admin-customers__amount {
+  color: #172033 !important;
+  font-weight: 750;
+}
+
+.admin-customers__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.admin-customers__status.is-active {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.admin-customers__status.is-inactive {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.admin-customers__view {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  color: #475467;
+  text-decoration: none;
+}
+
+.admin-customers__view:hover {
+  border-color: #b9c8e5;
+  background: #eff4ff;
+  color: #244b8f;
+}
+
+.admin-customers__state {
+  height: 190px;
+  text-align: center !important;
+  color: #667085 !important;
+}
+
+.admin-customers__state svg {
+  display: block;
+  margin: 0 auto 10px;
+}
+
+.admin-customers__state strong,
+.admin-customers__state span {
+  display: block;
+  margin-top: 7px;
+}
+
+.admin-customers__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 17px 24px;
+  border-top: 1px solid #eaecf0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.admin-customers__pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.admin-customers__pagination button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #e4e7ec;
+  border-radius: 7px;
+  background: #fff;
+  color: #344054;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-customers__pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-customers .is-spinning {
+  animation: admin-customers-spin 1s linear infinite;
+}
+
+@keyframes admin-customers-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-customers {
+    padding: 28px 15px 45px;
+  }
+
+  .admin-customers__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-customers__header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .admin-customers__panel-header {
+    padding: 18px 15px;
+  }
+
+  .admin-customers__search {
+    margin-inline: 15px;
+  }
+
+  .admin-customers__filters {
+    margin-inline: 15px;
+  }
+
+  .admin-customers__pagination {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-inline: 15px;
+  }
+}
+
+@media (max-width: 460px) {
+  .admin-customers__search {
+    flex-wrap: wrap;
+    padding-block: 8px;
+  }
+
+  .admin-customers__search input {
+    flex-basis: calc(100% - 40px);
+  }
+
+  .admin-customers__search-submit {
+    width: 100%;
+  }
+
+  .admin-customers__pagination > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+
+.admin-customers__view {
+  display: inline-flex;
+  width: auto;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid #e5e8ef;
+  border-radius: 8px;
+  color: #344054;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.admin-customers__view:hover {
+  border-color: #b9c8e5;
+  background: #eff4ff;
+  color: #244b8f;
+}
+
+
+==================== backend\src\services\admin\admin.service.js ====================
+import mongoose from "mongoose";
+
+import Order from "../../models/order/Order.model.js";
+import Product from "../../models/product/Product.model.js";
+import Category from "../../models/category/Category.model.js";
+import User from "../../models/user/User.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const LOW_STOCK_THRESHOLD = 5;
+const RECENT_ORDERS_LIMIT = 5;
+const LOW_STOCK_LIMIT = 5;
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  price_asc: { price: 1, _id: 1 },
+  price_desc: { price: -1, _id: -1 },
+  name_asc: { name: 1, _id: 1 },
+  name_desc: { name: -1, _id: -1 },
+});
+
+const ACTIVE_ORDER_STATUSES = [
+  "placed",
+  "confirmed",
+  "processing",
+  "shipped",
+];
+
+const throwBadRequest = (message) => {
+  throw new ApiError(HTTP_STATUS.BAD_REQUEST, message);
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parseInteger = (value, field, min, max) => {
+  if (
+    typeof value !== "string" ||
+    !/^\\d+$/.test(value)
+  ) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return parsed;
+};
+
+const normalizeAdminProductQuery = (query = {}) => {
+  const allowedFields = new Set([
+    "search",
+    "category",
+    "status",
+    "stockStatus",
+    "sort",
+    "page",
+    "limit",
+  ]);
+
+  for (const field of Object.keys(query)) {
+    if (!allowedFields.has(field)) {
+      throwBadRequest(`Unsupported query parameter: ${field}.`);
+    }
+  }
+
+  if (
+    query.search !== undefined &&
+    typeof query.search !== "string"
+  ) {
+    throwBadRequest("Search must be a valid string.");
+  }
+
+  if (
+    query.category !== undefined &&
+    typeof query.category !== "string"
+  ) {
+    throwBadRequest("Category must be a valid string.");
+  }
+
+  const search = query.search?.trim();
+  const category = query.category?.trim();
+
+  if (search && search.length > MAX_SEARCH_LENGTH) {
+    throwBadRequest("Search query is too long.");
+  }
+
+  if (query.category !== undefined && !category) {
+    throwBadRequest("Category cannot be empty.");
+  }
+
+  const status = query.status ?? "all";
+
+  if (!["all", "active", "inactive"].includes(status)) {
+    throwBadRequest("Invalid product status filter.");
+  }
+
+  const stockStatus = query.stockStatus ?? "all";
+
+  if (
+    !["all", "in_stock", "low_stock", "out_of_stock"].includes(
+      stockStatus
+    )
+  ) {
+    throwBadRequest("Invalid stock status filter.");
+  }
+
+  const sort = query.sort ?? "newest";
+
+  if (
+    typeof sort !== "string" ||
+    !Object.hasOwn(SORT_OPTIONS, sort)
+  ) {
+    throwBadRequest("Invalid product sorting option.");
+  }
+
+  const page =
+    query.page === undefined
+      ? DEFAULT_PAGE
+      : parseInteger(query.page, "Page", 1, 1000000);
+
+  const limit =
+    query.limit === undefined
+      ? DEFAULT_LIMIT
+      : parseInteger(query.limit, "Limit", 1, MAX_LIMIT);
+
+  return {
+    search,
+    category,
+    status,
+    stockStatus,
+    sort,
+    page,
+    limit,
+  };
+};
+
+const getDashboardStats = async () => {
+ 
+const [
+  totalOrders,
+  totalProducts,
+  totalCustomers,
+  activeCustomers,
+  inactiveCustomers,
+  activeOrders,
+  totalCancelledOrders,
+  revenueResult,
+  orderValueResult,
+  cancelledValueResult,
+  lowStockCount,
+  recentOrders,
+  lowStockProducts,
+] = await Promise.all([
+  Order.countDocuments(),
+
+  Product.countDocuments({ isActive: true }),
+
+  User.countDocuments({ role: "customer" }),
+
+  User.countDocuments({
+    role: "customer",
+    isActive: true,
+  }),
+
+  User.countDocuments({
+    role: "customer",
+    isActive: false,
+  }),
+
+  Order.countDocuments({
+    status: {
+      $in: ["placed", "confirmed", "processing", "shipped"],
+    },
+  }),
+
+  Order.countDocuments({ status: "cancelled" }),
+
+  Order.aggregate([
+    {
+      $match: {
+        paymentStatus: "paid",
+        status: { $ne: "cancelled" },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$total" },
+      },
+    },
+  ]),
+
+  Order.aggregate([
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$total" },
+      },
+    },
+  ]),
+
+  Order.aggregate([
+    {
+      $match: { status: "cancelled" },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$total" },
+      },
+    },
+  ]),
+
+  Product.countDocuments({
+    isActive: true,
+    stock: { $lte: 5 },
+  }),
+
+  Order.find()
+    .sort({ createdAt: -1 })
+    .limit(8)
+    .select(
+      "orderNumber customer.fullName total status paymentStatus createdAt"
+    )
+    .lean(),
+
+  Product.find({
+    isActive: true,
+    stock: { $lte: 5 },
+  })
+    .sort({ stock: 1 })
+    .limit(8)
+    .select("name sku price stock image category")
+    .lean(),
+]);
+
+const stats = {
+  totalRevenue: revenueResult[0]?.total || 0,
+  totalOrderValue: orderValueResult[0]?.total || 0,
+  cancelledOrderValue: cancelledValueResult[0]?.total || 0,
+  totalOrders,
+  totalCancelledOrders,
+  activeOrders,
+  totalProducts,
+  totalCustomers,
+  activeCustomers,
+  inactiveCustomers,
+  lowStockCount,
+};
+
+return {
+  stats,
+  recentOrders,
+  lowStockProducts,
+};
+
+};
+
+const getAdminProducts = async (query = {}) => {
+  const {
+    search,
+    category,
+    status,
+    stockStatus,
+    sort,
+    page,
+    limit,
+  } = normalizeAdminProductQuery(query);
+
+  const filter = {};
+
+  if (status === "active") filter.isActive = true;
+  if (status === "inactive") filter.isActive = false;
+
+  if (search) {
+    const searchRegex = new RegExp(escapeRegex(search), "i");
+
+    filter.$or = [
+      { name: searchRegex },
+      { sku: searchRegex },
+    ];
+  }
+
+  if (category) {
+    const categoryDocument = mongoose.isValidObjectId(category)
+      ? await Category.findOne({ _id: category, isActive: true })
+          .select("_id name")
+          .lean()
+      : await Category.findOne({
+          isActive: true,
+          $or: [
+            { slug: category },
+            {
+              name: {
+                $regex: `^${escapeRegex(category)}$`,
+                $options: "i",
+              },
+            },
+          ],
+        })
+          .select("_id name")
+          .lean();
+
+    const categoryFilter = categoryDocument
+      ? {
+          $or: [
+            { categoryId: categoryDocument._id },
+            {
+              category: categoryDocument.name,
+              categoryId: null,
+            },
+            {
+              category: categoryDocument.name,
+              categoryId: { $exists: false },
+            },
+          ],
+        }
+      : { category };
+
+    filter.$and = [
+      ...(filter.$and || []),
+      categoryFilter,
+    ];
+  }
+
+  if (stockStatus === "in_stock") {
+    filter.stock = { $gt: LOW_STOCK_THRESHOLD };
+  }
+
+  if (stockStatus === "low_stock") {
+    filter.stock = { $gt: 0, $lte: LOW_STOCK_THRESHOLD };
+  }
+
+  if (stockStatus === "out_of_stock") {
+    filter.stock = 0;
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [
+    products,
+    total,
+    categoryDocuments,
+    legacyCategories,
+  ] = await Promise.all([
+    Product.find(filter)
+      .sort(SORT_OPTIONS[sort])
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    Product.countDocuments(filter),
+
+    Category.find({ isActive: true })
+      .select("name")
+      .lean(),
+
+    Product.distinct("category"),
+  ]);
+
+  const categoryNames = new Map();
+
+  for (const name of [
+    ...categoryDocuments.map((item) => item.name),
+    ...legacyCategories,
+  ]) {
+    if (typeof name !== "string" || !name.trim()) continue;
+
+    const normalizedName = name.trim();
+    const key = normalizedName.toLocaleLowerCase();
+
+    if (!categoryNames.has(key)) {
+      categoryNames.set(key, normalizedName);
+    }
+  }
+
+  return {
+    products,
+    categories: [...categoryNames.values()].sort((a, b) =>
+      a.localeCompare(b)
+    ),
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const getAdminProductById = async (productId) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findById(productId).lean();
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
+  }
+
+  return product;
+};
+
+const updateProductStatus = async (productId, isActive) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findOneAndUpdate(
+    { _id: productId, isActive: !isActive },
+    { $set: { isActive } },
+    { new: true, runValidators: true }
+  ).lean();
+
+  if (!product) {
+    const exists = await Product.exists({ _id: productId });
+
+    if (!exists) {
+      throw new ApiError(
+        HTTP_STATUS.NOT_FOUND,
+        "Product not found."
+      );
+    }
+
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      `Product is already ${isActive ? "active" : "inactive"}.`
+    );
+  }
+
+  return product;
+};
+
+const activateProduct = (productId) =>
+  updateProductStatus(productId, true);
+
+const deactivateProduct = (productId) =>
+  updateProductStatus(productId, false);
+
+const adminService = {
+  getDashboardStats,
+  getAdminProducts,
+  getAdminProductById,
+  activateProduct,
+  deactivateProduct,
+};
+
+export default adminService;
+
+==================== backend\src\services\admin\admin-customer.service.js ====================
+import mongoose from "mongoose";
+
+import User from "../../models/user/User.model.js";
+import Order from "../../models/order/Order.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+const RECENT_ORDERS_LIMIT = 10;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  name_asc: { fullName: 1, _id: 1 },
+  name_desc: { fullName: -1, _id: -1 },
+});
+
+const throwBadRequest = (message) => {
+  throw new ApiError(HTTP_STATUS.BAD_REQUEST, message);
+};
+
+const throwNotFound = (message) => {
+  throw new ApiError(HTTP_STATUS.NOT_FOUND, message);
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parseInteger = (value, field, min, max) => {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return parsed;
+};
+
+const normalizeQuery = (query = {}) => {
+  const allowedFields = new Set([
+    "search",
+    "status",
+    "sort",
+    "page",
+    "limit",
+  ]);
+
+  for (const field of Object.keys(query)) {
+    if (!allowedFields.has(field)) {
+      throwBadRequest(`Unsupported query parameter: ${field}.`);
+    }
+  }
+
+  if (
+    query.search !== undefined &&
+    typeof query.search !== "string"
+  ) {
+    throwBadRequest("Search must be a valid string.");
+  }
+
+  const search = query.search?.trim() || "";
+
+  if (search.length > MAX_SEARCH_LENGTH) {
+    throwBadRequest("Search query is too long.");
+  }
+
+  const status = query.status ?? "all";
+
+  if (!["all", "active", "inactive"].includes(status)) {
+    throwBadRequest("Invalid customer status filter.");
+  }
+
+  const sort = query.sort ?? "newest";
+
+  if (
+    typeof sort !== "string" ||
+    !Object.hasOwn(SORT_OPTIONS, sort)
+  ) {
+    throwBadRequest("Invalid customer sorting option.");
+  }
+
+  const page =
+    query.page === undefined
+      ? DEFAULT_PAGE
+      : parseInteger(query.page, "Page", 1, 1000000);
+
+  const limit =
+    query.limit === undefined
+      ? DEFAULT_LIMIT
+      : parseInteger(query.limit, "Limit", 1, MAX_LIMIT);
+
+  return { search, status, sort, page, limit };
+};
+
+const getAdminCustomers = async (query = {}) => {
+  const { search, status, sort, page, limit } = normalizeQuery(query);
+
+  const filter = { role: "customer" };
+
+  if (status === "active") filter.isActive = true;
+  if (status === "inactive") filter.isActive = false;
+
+  if (search) {
+    const searchRegex = new RegExp(escapeRegex(search), "i");
+
+    filter.$or = [
+      { fullName: searchRegex },
+      { email: searchRegex },
+      { phone: searchRegex },
+    ];
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [customers, total] = await Promise.all([
+    User.find(filter)
+      .select("_id fullName email phone role isActive createdAt updatedAt")
+      .sort(SORT_OPTIONS[sort])
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    User.countDocuments(filter),
+  ]);
+
+  const customerIds = customers.map((customer) => customer._id);
+
+  const orderStats = customerIds.length
+    ? await Order.aggregate([
+        {
+          $match: {
+            user: { $in: customerIds },
+          },
+        },
+        {
+          $group: {
+            _id: "$user",
+            totalOrders: { $sum: 1 },
+            deliveredOrders: {
+              $sum: {
+                $cond: [{ $eq: ["$status", "delivered"] }, 1, 0],
+              },
+            },
+            totalOrderValue: { $sum: "$total" },
+            cancelledOrderValue: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$status", "cancelled"] },
+                  "$total",
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ])
+    : [];
+
+  const statsMap = new Map(
+    orderStats.map((item) => [item._id.toString(), item])
+  );
+
+  const result = customers.map((customer) => {
+    const stats = statsMap.get(customer._id.toString());
+
+    return {
+      ...customer,
+      orderStats: {
+        totalOrders: stats?.totalOrders ?? 0,
+        deliveredOrders: stats?.deliveredOrders ?? 0,
+        totalOrderValue: stats?.totalOrderValue ?? 0,
+        cancelledOrderValue: stats?.cancelledOrderValue ?? 0,
+      },
+    };
+  });
+
+  return {
+    customers: result,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const getAdminCustomerById = async (customerId) => {
+  if (!mongoose.isValidObjectId(customerId)) {
+    throwBadRequest("Invalid customer ID.");
+  }
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: "customer",
+  })
+    .select("_id fullName email phone role isActive createdAt updatedAt")
+    .lean();
+
+  if (!customer) {
+    throwNotFound("Customer not found.");
+  }
+
+  const [summaryResult, recentOrders] = await Promise.all([
+    Order.aggregate([
+      {
+        $match: {
+          user: customer._id,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          deliveredOrders: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "delivered"] }, 1, 0],
+            },
+          },
+          cancelledOrders: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0],
+            },
+          },
+          activeOrders: {
+            $sum: {
+              $cond: [
+                {
+                  $in: [
+                    "$status",
+                    ["placed", "confirmed", "processing", "shipped"],
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          totalOrderValue: { $sum: "$total" },
+          cancelledOrderValue: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "cancelled"] },
+                "$total",
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]),
+
+    Order.find({ user: customer._id })
+      .select(
+        "orderNumber status paymentStatus paymentMethod subtotal total items createdAt"
+      )
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(RECENT_ORDERS_LIMIT)
+      .lean(),
+  ]);
+
+  const summary = summaryResult[0] || {
+    totalOrders: 0,
+    deliveredOrders: 0,
+    cancelledOrders: 0,
+    activeOrders: 0,
+    totalOrderValue: 0,
+    cancelledOrderValue: 0,
+  };
+
+  return {
+    customer,
+    summary,
+    recentOrders,
+  };
+};
+
+const updateCustomerStatus = async (customerId, isActive) => {
+  if (!mongoose.isValidObjectId(customerId)) {
+    throwBadRequest("Invalid customer ID.");
+  }
+
+  if (typeof isActive !== "boolean") {
+    throwBadRequest("Customer status must be a boolean.");
+  }
+
+  const customer = await User.findOneAndUpdate(
+    {
+      _id: customerId,
+      role: "customer",
+      isActive: !isActive,
+    },
+    {
+      $set: { isActive },
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
+  )
+    .select("_id fullName email phone role isActive createdAt updatedAt")
+    .lean();
+
+  if (customer) return customer;
+
+  const exists = await User.exists({
+    _id: customerId,
+    role: "customer",
+  });
+
+  if (!exists) {
+    throwNotFound("Customer not found.");
+  }
+
+  throw new ApiError(
+    HTTP_STATUS.CONFLICT,
+    `Customer is already ${isActive ? "active" : "inactive"}.`
+  );
+};
+
+const adminCustomerService = {
+  getAdminCustomers,
+  getAdminCustomerById,
+  updateCustomerStatus,
+};
+
+export default adminCustomerService;

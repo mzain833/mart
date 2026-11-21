@@ -1,0 +1,4309 @@
+﻿
+
+import {
+  
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
+
+import HomePage from "./pages/HomePage";
+import ShopPage from "./features/products/pages/ShopPage";
+import ProductDetailsPage from "./features/products/pages/ProductDetailsPage";
+import CartPage from "./features/cart/pages/CartPage";
+import WishlistPage from "./features/wishlist/pages/WishlistPage";
+import CheckoutPage from "./features/checkout/pages/CheckoutPage";
+import OrderConfirmationPage from "./features/checkout/pages/OrderConfirmationPage";
+
+import LoginPage from "./features/account/pages/LoginPage";
+import RegisterPage from "./features/account/pages/RegisterPage";
+import ForgotPasswordPage from "./features/account/pages/ForgotPasswordPage";
+import AccountDashboard from "./features/account/pages/AccountDashboard";
+import ProfilePage from "./features/account/pages/ProfilePage";
+import MyOrdersPage from "./features/account/pages/MyOrdersPage";
+import ProtectedAccountRoute from "./features/account/components/ProtectedAccountRoute";
+
+import OrderDetailsPage from "./features/orders/pages/OrderDetailsPage";
+
+import ProtectedAdminRoute from "./features/admin/components/ProtectedAdminRoute";
+import AdminDashboard from "./features/admin/pages/AdminDashboard";
+import AdminProducts from "./features/admin/pages/AdminProducts";
+import AdminProductForm from "./features/admin/pages/AdminProductForm";
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+
+      <Route path="/shop" element={<ShopPage />} />
+      <Route path="/categories" element={<ShopPage />} />
+
+      <Route
+        path="/new-arrivals"
+        element={<ShopPage collection="new-arrivals" />}
+      />
+
+      <Route
+        path="/best-sellers"
+        element={<ShopPage collection="best-sellers" />}
+      />
+
+      <Route
+        path="/product/:slug"
+        element={<ProductDetailsPage />}
+      />
+
+      <Route path="/cart" element={<CartPage />} />
+      <Route path="/wishlist" element={<WishlistPage />} />
+      <Route path="/checkout" element={<CheckoutPage />} />
+
+      <Route
+        path="/order-confirmation/:orderId"
+        element={<OrderConfirmationPage />}
+      />
+
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+      <Route element={<ProtectedAccountRoute />}>
+        <Route path="/account" element={<AccountDashboard />} />
+        <Route path="/account/profile" element={<ProfilePage />} />
+        <Route path="/account/orders" element={<MyOrdersPage />} />
+
+        <Route
+          path="/account/orders/:orderId"
+          element={<OrderDetailsPage />}
+        />
+      </Route>
+
+      <Route element={<ProtectedAdminRoute />}>
+        <Route path="/admin" element={<AdminDashboard />} />
+
+        <Route path="/admin/products" element={<AdminProducts />} />
+
+        <Route
+          path="/admin/products/new"
+          element={<AdminProductForm />}
+        />
+
+        <Route
+          path="/admin/products/:id/edit"
+          element={<AdminProductForm />}
+        />
+      </Route>
+
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
+      />
+    </Routes>
+  );
+}
+
+export default App;
+
+
+========== E:\NexMart\frontend\src\features\admin\components\AdminProductTable.jsx ==========
+
+import {
+  AlertTriangle,
+  Edit3,
+  LoaderCircle,
+  Package,
+  Power,
+  PowerOff,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+
+const formatCurrency = (value = 0) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const getStockStatus = (stock) => {
+  if (stock === 0) {
+    return { label: "Out of stock", className: "out" };
+  }
+
+  if (stock <= 5) {
+    return { label: "Low stock", className: "low" };
+  }
+
+  return { label: "In stock", className: "available" };
+};
+
+const AdminProductTable = ({
+  products,
+  isLoading,
+  actionLoading,
+  onToggleStatus,
+}) => {
+  if (isLoading && products.length === 0) {
+    return (
+      <div className="admin-products__state">
+        <Package size={30} />
+        <span>Loading products...</span>
+      </div>
+    );
+  }
+
+  if (!isLoading && products.length === 0) {
+    return (
+      <div className="admin-products__state">
+        <Package size={34} />
+        <strong>No products found</strong>
+        <span>Try changing your search or filters.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-products__table-wrap">
+      <table className="admin-products__table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Category</th>
+            <th>Price</th>
+            <th>Inventory</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {products.map((product) => {
+            const stock = getStockStatus(product.stock);
+            const isUpdating = actionLoading === product._id;
+
+            return (
+              <tr key={product._id}>
+                <td>
+                  <div className="admin-products__product">
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      loading="lazy"
+                    />
+
+                    <div>
+                      <strong>{product.name}</strong>
+                      <span>{product.slug}</span>
+                    </div>
+                  </div>
+                </td>
+
+                <td className="admin-products__sku">
+                  {product.sku}
+                </td>
+
+                <td>{product.category}</td>
+
+                <td className="admin-products__price">
+                  {formatCurrency(product.price)}
+                </td>
+
+                <td>
+                  <span
+                    className={`admin-products__stock admin-products__stock--${stock.className}`}
+                  >
+                    {stock.className === "out" && (
+                      <AlertTriangle size={13} />
+                    )}
+                    {product.stock} Â· {stock.label}
+                  </span>
+                </td>
+
+                <td>
+                  <span
+                    className={`admin-products__status ${
+                      product.isActive ? "is-active" : "is-inactive"
+                    }`}
+                  >
+                    <span />
+                    {product.isActive ? "Active" : "Inactive"}
+                  </span>
+                </td>
+
+                <td>
+                  <div className="admin-products__actions">
+                    <Link
+                      to={`/admin/products/${product._id}/edit`}
+                      className="admin-products__edit"
+                      aria-label={`Edit ${product.name}`}
+                      title="Edit product"
+                    >
+                      <Edit3 size={17} />
+                    </Link>
+
+                    <button
+                      type="button"
+                      className={`admin-products__action ${
+                        product.isActive
+                          ? "is-deactivate"
+                          : "is-activate"
+                      }`}
+                      onClick={() => onToggleStatus(product)}
+                      disabled={Boolean(actionLoading)}
+                      aria-label={
+                        product.isActive
+                          ? `Deactivate ${product.name}`
+                          : `Activate ${product.name}`
+                      }
+                      title={
+                        product.isActive
+                          ? "Deactivate product"
+                          : "Activate product"
+                      }
+                    >
+                      {isUpdating ? (
+                        <LoaderCircle
+                          size={17}
+                          className="is-spinning"
+                        />
+                      ) : product.isActive ? (
+                        <PowerOff size={17} />
+                      ) : (
+                        <Power size={17} />
+                      )}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+export default AdminProductTable;
+
+
+========== E:\NexMart\frontend\src\features\admin\components\ProtectedAdminRoute.jsx ==========
+import { Navigate, Outlet } from "react-router-dom";
+
+import useAccount from "../../account/hooks/useAccount";
+
+const ProtectedAdminRoute = () => {
+  const {
+    currentUser,
+    isAuthenticated,
+    isLoading,
+  } = useAccount();
+
+  if (isLoading) {
+    return (
+      <div className="admin-auth-loading" role="status">
+        Verifying administrator access...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (currentUser?.role !== "admin") {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Outlet />;
+};
+
+export default ProtectedAdminRoute;
+
+========== E:\NexMart\frontend\src\features\admin\hooks\useAdminDashboard.js ==========
+
+import { useCallback, useEffect, useState } from "react";
+
+import adminService from "../services/adminService";
+
+const useAdminDashboard = () => {
+  const [dashboard, setDashboard] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const fetchDashboard = useCallback(async (signal) => {
+    try {
+      setError("");
+
+      const data = await adminService.getDashboard({ signal });
+
+      setDashboard(data);
+    } catch (error) {
+      if (error.code === "ERR_CANCELED") {
+        return;
+      }
+
+      setError(
+        error.response?.data?.message ||
+          "Unable to load dashboard data. Please try again."
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetchDashboard(controller.signal);
+
+    return () => controller.abort();
+  }, [fetchDashboard]);
+
+  const refreshDashboard = useCallback(() => {
+    setIsLoading(true);
+    fetchDashboard();
+  }, [fetchDashboard]);
+
+  return {
+    dashboard,
+    isLoading,
+    error,
+    refreshDashboard,
+  };
+};
+
+export default useAdminDashboard;
+
+
+========== E:\NexMart\frontend\src\features\admin\hooks\useAdminProducts.js ==========
+
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import adminProductService from "../services/adminProductService";
+
+const INITIAL_FILTERS = {
+  search: "",
+  category: "",
+  status: "all",
+  stockStatus: "all",
+  sort: "newest",
+  page: 1,
+  limit: 12,
+};
+
+const useAdminProducts = () => {
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [pagination, setPagination] = useState(null);
+
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [searchInput, setSearchInput] = useState("");
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState("");
+  const [error, setError] = useState("");
+
+  const fetchProducts = useCallback(async (signal) => {
+    try {
+      setError("");
+
+      const params = {
+        ...filters,
+        category: filters.category || undefined,
+      };
+
+      const data = await adminProductService.getProducts(
+        params,
+        { signal }
+      );
+
+      setProducts(data.products);
+      setCategories(data.categories);
+      setPagination(data.pagination);
+    } catch (requestError) {
+      if (
+        requestError.code === "ERR_CANCELED" ||
+        signal?.aborted
+      ) {
+        return;
+      }
+
+      setError(
+        requestError.response?.data?.message ||
+          "Unable to load products. Please try again."
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setIsLoading(true);
+    fetchProducts(controller.signal);
+
+    return () => controller.abort();
+  }, [fetchProducts]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setFilters((current) => {
+        if (current.search === searchInput.trim()) {
+          return current;
+        }
+
+        return {
+          ...current,
+          search: searchInput.trim(),
+          page: 1,
+        };
+      });
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
+  const updateFilter = useCallback((name, value) => {
+    setFilters((current) => ({
+      ...current,
+      [name]: value,
+      page: 1,
+    }));
+  }, []);
+
+  const changePage = useCallback((page) => {
+    setFilters((current) => ({
+      ...current,
+      page,
+    }));
+  }, []);
+
+  const refreshProducts = useCallback(() => {
+    setIsLoading(true);
+    fetchProducts();
+  }, [fetchProducts]);
+
+  const toggleProductStatus = useCallback(async (product) => {
+    const productId = product._id;
+
+    try {
+      setActionLoading(productId);
+      setError("");
+
+      if (product.isActive) {
+        await adminProductService.deactivateProduct(productId);
+      } else {
+        await adminProductService.activateProduct(productId);
+      }
+
+      await fetchProducts();
+    } catch (requestError) {
+      setError(
+        requestError.response?.data?.message ||
+          "Unable to update product status. Please try again."
+      );
+    } finally {
+      setActionLoading("");
+    }
+  }, [fetchProducts]);
+
+  return {
+    products,
+    categories,
+    pagination,
+    filters,
+    searchInput,
+    setSearchInput,
+    updateFilter,
+    changePage,
+    refreshProducts,
+    toggleProductStatus,
+    isLoading,
+    actionLoading,
+    error,
+  };
+};
+
+export default useAdminProducts;
+
+
+========== E:\NexMart\frontend\src\features\admin\pages\AdminDashboard.jsx ==========
+
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Boxes,
+  CircleDollarSign,
+  ClipboardList,
+  Package,
+  RefreshCw,
+  ShieldCheck,
+  ShoppingBag,
+  Users,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import useAdminDashboard from "../hooks/useAdminDashboard";
+import "./admin.css";
+
+const formatCurrency = (value = 0) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const formatDate = (date) =>
+  new Intl.DateTimeFormat("en-PK", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(date));
+
+const formatStatus = (status = "") =>
+  status.charAt(0).toUpperCase() + status.slice(1);
+
+const statsConfig = [
+  {
+    key: "totalRevenue",
+    label: "Paid Revenue",
+    icon: CircleDollarSign,
+    format: formatCurrency,
+    description: "Successfully paid orders",
+    color: "revenue",
+  },
+  {
+    key: "totalOrderValue",
+    label: "Total Order Value",
+    icon: ShoppingBag,
+    format: formatCurrency,
+    description: "Value of non-cancelled orders",
+    color: "orders",
+  },
+  {
+    key: "totalOrders",
+    label: "Total Orders",
+    icon: ClipboardList,
+    description: "All orders received",
+    color: "total",
+  },
+  {
+    key: "activeOrders",
+    label: "Active Orders",
+    icon: Activity,
+    description: "Orders currently in progress",
+    color: "active",
+  },
+  {
+    key: "totalProducts",
+    label: "Active Products",
+    icon: Package,
+    description: "Products available in store",
+    color: "products",
+  },
+  {
+    key: "totalCustomers",
+    label: "Customers",
+    icon: Users,
+    description: "Active registered customers",
+    color: "customers",
+  },
+  {
+    key: "lowStockCount",
+    label: "Low Stock Items",
+    icon: AlertTriangle,
+    description: "Products requiring attention",
+    color: "warning",
+  },
+];
+
+const AdminDashboard = () => {
+  const {
+    dashboard,
+    isLoading,
+    error,
+    refreshDashboard,
+  } = useAdminDashboard();
+
+  const stats = dashboard?.stats;
+  const recentOrders = dashboard?.recentOrders || [];
+  const lowStockProducts = dashboard?.lowStockProducts || [];
+
+  return (
+    <main className="admin-dashboard">
+      <div className="admin-dashboard__container">
+        <header className="admin-dashboard__header">
+          <div>
+            <span className="admin-dashboard__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>Dashboard Overview</h1>
+
+            <p>
+              Monitor your store performance and manage operations.
+            </p>
+          </div>
+
+          <div className="admin-dashboard__header-actions">
+            <div className="admin-dashboard__security">
+              <ShieldCheck size={18} />
+              <span>Authorized Administrator</span>
+              <Link
+  to="/admin/products"
+  className="admin-dashboard__manage-products"
+>
+  <Package size={17} />
+  <span>Manage Products</span>
+</Link>
+            </div>
+
+            <button
+              type="button"
+              className="admin-dashboard__refresh"
+              onClick={refreshDashboard}
+              disabled={isLoading}
+              aria-label="Refresh dashboard"
+            >
+              <RefreshCw
+                size={17}
+                className={isLoading ? "is-spinning" : ""}
+              />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </header>
+
+        {error && (
+          <div className="admin-dashboard__error" role="alert">
+            <AlertTriangle size={19} />
+            <span>{error}</span>
+
+            <button type="button" onClick={refreshDashboard}>
+              Try again
+            </button>
+          </div>
+        )}
+
+        <section className="admin-dashboard__section">
+          <div className="admin-dashboard__section-heading">
+            <div>
+              <h2>Store Performance</h2>
+              <p>Your store's key business metrics.</p>
+            </div>
+
+            <span className="admin-dashboard__live">
+              <span />
+              Live data
+            </span>
+          </div>
+
+          <div className="admin-dashboard__stats">
+            {statsConfig.map((item) => {
+              const Icon = item.icon;
+              const value = stats?.[item.key] ?? 0;
+
+              return (
+                <article
+                  className={`admin-stat admin-stat--${item.color}`}
+                  key={item.key}
+                >
+                  <div className="admin-stat__top">
+                    <span>{item.label}</span>
+
+                    <div className="admin-stat__icon">
+                      <Icon size={20} />
+                    </div>
+                  </div>
+
+                  <strong>
+                    {item.format ? item.format(value) : value}
+                  </strong>
+
+                  <p>{item.description}</p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="admin-dashboard__section admin-dashboard__section--tables">
+          <div className="admin-dashboard__panel">
+            <div className="admin-dashboard__panel-header">
+              <div>
+                <h2>Recent Orders</h2>
+                <p>Latest customer transactions.</p>
+              </div>
+
+              <ClipboardList size={20} />
+            </div>
+
+            {isLoading && !dashboard ? (
+              <div className="admin-dashboard__empty">
+                Loading orders...
+              </div>
+            ) : recentOrders.length === 0 ? (
+              <div className="admin-dashboard__empty">
+                No orders available yet.
+              </div>
+            ) : (
+              <div className="admin-dashboard__table-wrap">
+                <table className="admin-dashboard__table">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Customer</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {recentOrders.map((order) => (
+                      <tr key={order._id}>
+                        <td className="admin-dashboard__order-number">
+                          {order.orderNumber}
+                        </td>
+
+                        <td>{order.customer?.fullName || "Customer"}</td>
+
+                        <td className="admin-dashboard__amount">
+                          {formatCurrency(order.total)}
+                        </td>
+
+                        <td>
+                          <span
+                            className={`admin-status admin-status--${order.status}`}
+                          >
+                            {formatStatus(order.status)}
+                          </span>
+                        </td>
+
+                        <td>{formatDate(order.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="admin-dashboard__panel">
+            <div className="admin-dashboard__panel-header">
+              <div>
+                <h2>Inventory Alerts</h2>
+                <p>Products requiring restocking.</p>
+              </div>
+
+              <Boxes size={20} />
+            </div>
+
+            {isLoading && !dashboard ? (
+              <div className="admin-dashboard__empty">
+                Loading inventory...
+              </div>
+            ) : lowStockProducts.length === 0 ? (
+              <div className="admin-dashboard__empty">
+                <Package size={28} />
+                <span>All inventory levels look healthy.</span>
+              </div>
+            ) : (
+              <div className="admin-inventory">
+                {lowStockProducts.map((product) => (
+                  <div
+                    className="admin-inventory__item"
+                    key={product._id}
+                  >
+                    <div className="admin-inventory__details">
+                      <strong>{product.name}</strong>
+                      <span>{product.sku}</span>
+                    </div>
+
+                    <span
+                      className={`admin-inventory__stock ${
+                        product.stock === 0 ? "is-out" : ""
+                      }`}
+                    >
+                      {product.stock === 0
+                        ? "Out of stock"
+                        : `${product.stock} left`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <footer className="admin-dashboard__footer">
+          <ShieldCheck size={16} />
+          <span>NexaMart secure administration workspace</span>
+        </footer>
+      </div>
+    </main>
+  );
+};
+
+export default AdminDashboard;
+
+
+========== E:\NexMart\frontend\src\features\admin\pages\AdminProductForm.jsx ==========
+
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  Image as ImageIcon,
+  LoaderCircle,
+  Save,
+  ShieldCheck,
+  Upload,
+  X,
+  Star,
+} from "lucide-react";
+import {
+  Link,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
+
+import adminProductService from "../services/adminProductService";
+
+import "./admin-product-form.css";
+
+const INITIAL_FORM = {
+  sku: "",
+  slug: "",
+  name: "",
+  category: "",
+  categoryId: "",
+  price: "",
+  compareAtPrice: "",
+  badge: "",
+  description: "",
+  stock: "0",
+  isNewArrival: false,
+  bestSeller: false,
+  isActive: true,
+};
+
+const MAX_IMAGES = 8;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+];
+
+const slugify = (value) =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const getErrorMessage = (error) =>
+  error.response?.data?.message ||
+  error.message ||
+  "Something went wrong. Please try again.";
+
+const createImageId = (file, index) =>
+  `${Date.now()}-${index}-${file.name}`;
+
+const AdminProductForm = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+
+  const isEditMode = Boolean(id);
+
+  const fileInputRef = useRef(null);
+  const objectUrlsRef = useRef(new Set());
+
+  const [form, setForm] = useState(INITIAL_FORM);
+  const [images, setImages] = useState([]);
+  const [mainImageId, setMainImageId] = useState(null);
+
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [loading, setLoading] = useState(isEditMode);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // Load active categories.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadCategories = async () => {
+      try {
+        setCategoriesLoading(true);
+
+        const data = await adminProductService.getCategories({
+          signal: controller.signal,
+        });
+
+        setCategories(Array.isArray(data) ? data : []);
+      } catch (requestError) {
+        if (
+          requestError.code === "ERR_CANCELED" ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setError(getErrorMessage(requestError));
+      } finally {
+        if (!controller.signal.aborted) {
+          setCategoriesLoading(false);
+        }
+      }
+    };
+
+    loadCategories();
+
+    return () => controller.abort();
+  }, []);
+
+  // Release temporary image previews.
+  useEffect(() => {
+    return () => {
+      objectUrlsRef.current.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+
+      objectUrlsRef.current.clear();
+    };
+  }, []);
+
+  // Load existing product in edit mode.
+  useEffect(() => {
+    if (!isEditMode) return undefined;
+
+    const controller = new AbortController();
+
+    const loadProduct = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const product = await adminProductService.getProductById(
+          id,
+          { signal: controller.signal }
+        );
+
+        setForm({
+          sku: product.sku ?? "",
+          slug: product.slug ?? "",
+          name: product.name ?? "",
+          category: product.category ?? "",
+          categoryId: product.categoryId ?? "",
+          price: String(product.price ?? ""),
+          compareAtPrice:
+            product.compareAtPrice == null
+              ? ""
+              : String(product.compareAtPrice),
+          badge: product.badge ?? "",
+          description: product.description ?? "",
+          stock: String(product.stock ?? 0),
+          isNewArrival: Boolean(product.isNewArrival),
+          bestSeller: Boolean(product.bestSeller),
+          isActive: Boolean(product.isActive),
+        });
+
+        const existingImages = Array.isArray(product.images)
+          ? product.images.map((image, index) => ({
+              id: image.publicId || `existing-${index}`,
+              url: image.url,
+              publicId: image.publicId,
+              file: null,
+              previewUrl: image.url,
+              isExisting: true,
+            }))
+          : [];
+
+        const initialImages = existingImages.length
+          ? existingImages
+          : product.image
+            ? [
+                {
+                  id: "legacy-image",
+                  url: product.image,
+                  publicId: null,
+                  file: null,
+                  previewUrl: product.image,
+                  isExisting: true,
+                  isLegacy: true,
+                },
+              ]
+            : [];
+
+        setImages(initialImages);
+        setMainImageId(initialImages[0]?.id ?? null);
+        setSlugTouched(true);
+      } catch (requestError) {
+        if (
+          requestError.code === "ERR_CANCELED" ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setError(getErrorMessage(requestError));
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadProduct();
+
+    return () => controller.abort();
+  }, [id, isEditMode]);
+
+  const updateField = (name, value) => {
+    setForm((current) => {
+      const updated = { ...current, [name]: value };
+
+      if (name === "name" && !slugTouched) {
+        updated.slug = slugify(value);
+      }
+
+      return updated;
+    });
+  };
+
+  const handleCategoryChange = (event) => {
+    const categoryId = event.target.value;
+
+    const selectedCategory = categories.find(
+      (category) => category._id === categoryId
+    );
+
+    if (selectedCategory) {
+      setForm((current) => ({
+        ...current,
+        categoryId: selectedCategory._id,
+        category: selectedCategory.name,
+      }));
+
+      return;
+    }
+
+    // Preserve an existing legacy category.
+    setForm((current) => ({
+      ...current,
+      categoryId: "",
+    }));
+  };
+
+  const releaseImagePreview = (url) => {
+    if (!url || !objectUrlsRef.current.has(url)) return;
+
+    URL.revokeObjectURL(url);
+    objectUrlsRef.current.delete(url);
+  };
+
+  const handleImageSelection = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+
+    event.target.value = "";
+
+    if (!selectedFiles.length) return;
+
+    setError("");
+
+    const availableSlots = MAX_IMAGES - images.length;
+
+    if (availableSlots <= 0) {
+      setError(`Maximum ${MAX_IMAGES} images allowed hain.`);
+      return;
+    }
+
+    const acceptedFiles = [];
+    const validationErrors = [];
+
+    selectedFiles.forEach((file) => {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        validationErrors.push(
+          `${file.name}: Unsupported image format.`
+        );
+        return;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE) {
+        validationErrors.push(
+          `${file.name}: Image size 5MB se zyada hai.`
+        );
+        return;
+      }
+
+      acceptedFiles.push(file);
+    });
+
+    const filesToAdd = acceptedFiles.slice(0, availableSlots);
+
+    if (acceptedFiles.length > availableSlots) {
+      validationErrors.push(
+        `Sirf ${availableSlots} additional images add ho sakti hain.`
+      );
+    }
+
+    if (validationErrors.length) {
+      setError(validationErrors.join(" "));
+    }
+
+    if (!filesToAdd.length) return;
+
+    const newImages = filesToAdd.map((file, index) => {
+      const previewUrl = URL.createObjectURL(file);
+
+      objectUrlsRef.current.add(previewUrl);
+
+      return {
+        id: createImageId(file, index),
+        url: "",
+        publicId: null,
+        file,
+        previewUrl,
+        isExisting: false,
+      };
+    });
+
+    if (!images.some((image) => !image.isLegacy)) {
+      setMainImageId(newImages[0].id);
+    }
+
+    setImages((current) => [...current, ...newImages]);
+  };
+
+  const handleRemoveImage = (imageId) => {
+    const targetImage = images.find(
+      (image) => image.id === imageId
+    );
+
+    if (!targetImage) return;
+
+    releaseImagePreview(targetImage.previewUrl);
+
+    const updatedImages = images.filter(
+      (image) => image.id !== imageId
+    );
+
+    setImages(updatedImages);
+
+    if (mainImageId === imageId) {
+      setMainImageId(updatedImages[0]?.id ?? null);
+    }
+  };
+
+  const handleSetMainImage = (imageId) => {
+    const targetImage = images.find(
+      (image) => image.id === imageId
+    );
+
+    if (!targetImage) return;
+
+    if (
+      targetImage.isLegacy &&
+      images.some((image) => !image.isLegacy)
+    ) {
+      setError(
+        "Cloudinary images mein se main image select karein."
+      );
+      return;
+    }
+
+    setMainImageId(imageId);
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    setError("");
+
+    const mainImage =
+      images.find((image) => image.id === mainImageId) ??
+      images[0] ??
+      null;
+
+    if (!mainImage) {
+      setError("Kam az kam aik product image select karein.");
+      return;
+    }
+
+    if (mainImage.id !== mainImageId) {
+      setMainImageId(mainImage.id);
+    }
+
+    const payload = {
+      ...form,
+      sku: form.sku.trim().toUpperCase(),
+      slug: form.slug.trim(),
+      name: form.name.trim(),
+      category: form.category.trim(),
+      price: Number(form.price),
+      compareAtPrice:
+        form.compareAtPrice.trim() === ""
+          ? null
+          : Number(form.compareAtPrice),
+      badge: form.badge.trim() || null,
+      description: form.description.trim(),
+      stock: Number(form.stock),
+      isNewArrival: Boolean(form.isNewArrival),
+      bestSeller: Boolean(form.bestSeller),
+      isActive: Boolean(form.isActive),
+    };
+
+    const selectedCategory = categories.find(
+      (category) =>
+        category._id === form.categoryId ||
+        category.name === form.category
+    );
+
+    if (selectedCategory) {
+      payload.categoryId = selectedCategory._id;
+      payload.category = selectedCategory.name;
+    } else if (form.categoryId) {
+      setError(
+        "Selected category available nahi hai. Dobara select karein."
+      );
+      return;
+    } else {
+      delete payload.categoryId;
+    }
+
+    if (
+      !Number.isFinite(payload.price) ||
+      payload.price < 0 ||
+      !Number.isInteger(payload.stock) ||
+      payload.stock < 0
+    ) {
+      setError(
+        "Price aur stock valid non-negative numbers hone chahiye."
+      );
+      return;
+    }
+
+    if (
+      payload.compareAtPrice !== null &&
+      (!Number.isFinite(payload.compareAtPrice) ||
+        payload.compareAtPrice <= payload.price)
+    ) {
+      setError(
+        "Compare-at price selling price se zyada honi chahiye."
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const newImages = images.filter(
+        (image) => image.file
+      );
+
+      let uploadedImages = [];
+
+      if (newImages.length) {
+        uploadedImages =
+          await adminProductService.uploadProductImages(
+            newImages.map((image) => image.file)
+          );
+      }
+
+      let uploadIndex = 0;
+
+      const resolvedImages = images.map((image) => {
+        if (!image.file) return image;
+
+        const uploadedImage = uploadedImages[uploadIndex];
+
+        uploadIndex += 1;
+
+        if (!uploadedImage?.url || !uploadedImage?.publicId) {
+          throw new Error(
+            "Image upload response invalid hai. Dobara try karein."
+          );
+        }
+
+        return {
+          ...image,
+          url: uploadedImage.url,
+          publicId: uploadedImage.publicId,
+        };
+      });
+
+      const orderedImages = [
+        ...resolvedImages.filter(
+          (image) => image.id === mainImageId
+        ),
+        ...resolvedImages.filter(
+          (image) => image.id !== mainImageId
+        ),
+      ];
+
+      const primaryImage = orderedImages[0];
+
+      payload.image = primaryImage.url;
+
+      const cloudinaryImages = orderedImages
+        .filter((image) => image.publicId)
+        .map(({ url, publicId }) => ({
+          url,
+          publicId,
+        }));
+
+      payload.images = cloudinaryImages;
+
+      if (isEditMode) {
+        delete payload.sku;
+
+        await adminProductService.updateProduct(
+          id,
+          payload
+        );
+      } else {
+        await adminProductService.createProduct(payload);
+      }
+
+      navigate("/admin/products", {
+        replace: true,
+        state: {
+          message: isEditMode
+            ? "Product updated successfully."
+            : "Product created successfully.",
+        },
+      });
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <main className="admin-product-form">
+        <div className="admin-product-form__state">
+          <LoaderCircle className="is-spinning" size={28} />
+          <span>Loading product details...</span>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="admin-product-form">
+      <div className="admin-product-form__container">
+        <header className="admin-product-form__header">
+          <div>
+            <Link
+              to="/admin/products"
+              className="admin-product-form__back"
+            >
+              <ArrowLeft size={16} />
+              Back to products
+            </Link>
+
+            <span className="admin-product-form__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>
+              {isEditMode ? "Edit Product" : "Create Product"}
+            </h1>
+
+            <p>
+              {isEditMode
+                ? "Update your product information and catalog settings."
+                : "Add a new product to your NexaMart catalog."}
+            </p>
+          </div>
+
+          <div className="admin-product-form__security">
+            <ShieldCheck size={17} />
+            Authorized Administrator
+          </div>
+        </header>
+
+        {error && (
+          <div className="admin-product-form__error" role="alert">
+            {error}
+          </div>
+        )}
+
+        <form
+          className="admin-product-form__layout"
+          onSubmit={handleSubmit}
+        >
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Product Information</h2>
+              <p>Basic details displayed in your store catalog.</p>
+            </div>
+
+            <div className="admin-product-form__grid">
+              <label className="admin-product-form__field">
+                <span>Product Name *</span>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(event) =>
+                    updateField("name", event.target.value)
+                  }
+                  minLength={2}
+                  maxLength={160}
+                  required
+                  placeholder="Enter product name"
+                />
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>SKU *</span>
+                <input
+                  type="text"
+                  value={form.sku}
+                  onChange={(event) =>
+                    updateField(
+                      "sku",
+                      event.target.value.toUpperCase()
+                    )
+                  }
+                  minLength={3}
+                  maxLength={40}
+                  required
+                  readOnly={isEditMode}
+                  placeholder="e.g. NM-009"
+                />
+                {isEditMode && (
+                  <small>SKU cannot be changed after creation.</small>
+                )}
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Product Slug *</span>
+                <input
+                  type="text"
+                  value={form.slug}
+                  onChange={(event) => {
+                    setSlugTouched(true);
+                    updateField("slug", slugify(event.target.value));
+                  }}
+                  minLength={3}
+                  maxLength={180}
+                  pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                  required
+                  placeholder="product-url-slug"
+                />
+                <small>Used in the product URL.</small>
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Category *</span>
+                <select
+                  value={
+                    form.categoryId ||
+                    (form.category ? `legacy:${form.category}` : "")
+                  }
+                  onChange={handleCategoryChange}
+                  required
+                  disabled={categoriesLoading || saving}
+                >
+                  <option value="">
+                    {categoriesLoading
+                      ? "Loading categories..."
+                      : "Select a category"}
+                  </option>
+
+                  {categories.map((category) => (
+                    <option
+                      key={category._id}
+                      value={category._id}
+                    >
+                      {category.name}
+                    </option>
+                  ))}
+
+                  {form.category &&
+                    !categories.some(
+                      (category) =>
+                        category._id === form.categoryId ||
+                        category.name === form.category
+                    ) && (
+                      <option value={`legacy:${form.category}`}>
+                        {form.category} (Legacy)
+                      </option>
+                    )}
+                </select>
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Badge</span>
+                <input
+                  type="text"
+                  value={form.badge}
+                  onChange={(event) =>
+                    updateField("badge", event.target.value)
+                  }
+                  maxLength={60}
+                  placeholder="e.g. Best Value"
+                />
+              </label>
+            </div>
+
+            <label className="admin-product-form__field admin-product-form__description">
+              <span>Description *</span>
+              <textarea
+                value={form.description}
+                onChange={(event) =>
+                  updateField("description", event.target.value)
+                }
+                minLength={10}
+                maxLength={3000}
+                rows={6}
+                required
+                placeholder="Write a detailed product description..."
+              />
+              <small>
+                {form.description.length}/3000 characters
+              </small>
+            </label>
+          </section>
+
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Product Images</h2>
+              <p>
+                Computer se images select karein. Main image
+                storefront par primary image hogi.
+              </p>
+            </div>
+
+            <div className="admin-product-form__upload">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/avif"
+                multiple
+                hidden
+                onChange={handleImageSelection}
+              />
+
+              <button
+                type="button"
+                className="admin-product-form__upload-button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={saving || images.length >= MAX_IMAGES}
+              >
+                <Upload size={19} />
+                <span>
+                  {images.length >= MAX_IMAGES
+                    ? "Image limit reached"
+                    : "Choose images from computer"}
+                </span>
+              </button>
+
+              <p className="admin-product-form__upload-hint">
+                JPEG, PNG, WEBP, AVIF Â· Maximum 5MB each Â·
+                Maximum 8 images
+              </p>
+            </div>
+
+            <div className="admin-product-form__image-count">
+              <span>Selected images</span>
+              <strong>
+                {images.length}/{MAX_IMAGES}
+              </strong>
+            </div>
+
+            {images.length ? (
+              <div className="admin-product-form__image-grid">
+                {images.map((image) => {
+                  const isMain = image.id === mainImageId;
+
+                  return (
+                    <article
+                      className={`admin-product-form__image-card ${
+                        isMain ? "is-main" : ""
+                      }`}
+                      key={image.id}
+                    >
+                      <div className="admin-product-form__image-frame">
+                        <img
+                          src={image.previewUrl}
+                          alt="Product"
+                        />
+
+                        {isMain && (
+                          <span className="admin-product-form__main-badge">
+                            <Star size={12} fill="currentColor" />
+                            Main Image
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          className="admin-product-form__image-remove"
+                          onClick={() => handleRemoveImage(image.id)}
+                          disabled={saving}
+                          aria-label="Remove image"
+                          title="Remove image"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+
+                      <div className="admin-product-form__image-meta">
+                        {!isMain && (
+                          <button
+                            type="button"
+                            className="admin-product-form__main-action"
+                            onClick={() =>
+                              handleSetMainImage(image.id)
+                            }
+                            disabled={saving}
+                          >
+                            Set as main
+                          </button>
+                        )}
+
+                        {image.file && (
+                          <small>
+                            {(image.file.size / (1024 * 1024)).toFixed(2)} MB
+                          </small>
+                        )}
+
+                        {image.isLegacy && (
+                          <small>Existing legacy image</small>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="admin-product-form__empty-images">
+                <ImageIcon size={34} />
+                <span>No product images selected.</span>
+                <small>At least one image is required.</small>
+              </div>
+            )}
+          </section>
+
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Pricing & Inventory</h2>
+              <p>Configure product pricing and stock availability.</p>
+            </div>
+
+            <div className="admin-product-form__grid">
+              <label className="admin-product-form__field">
+                <span>Selling Price (PKR) *</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(event) =>
+                    updateField("price", event.target.value)
+                  }
+                  required
+                  placeholder="0"
+                />
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Compare-at Price (PKR)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.compareAtPrice}
+                  onChange={(event) =>
+                    updateField("compareAtPrice", event.target.value)
+                  }
+                  placeholder="Optional"
+                />
+                <small>Must be higher than selling price.</small>
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Stock Quantity *</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.stock}
+                  onChange={(event) =>
+                    updateField("stock", event.target.value)
+                  }
+                  required
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Catalog Settings</h2>
+              <p>Control product visibility and merchandising.</p>
+            </div>
+
+            <div className="admin-product-form__toggles">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.isNewArrival}
+                  onChange={(event) =>
+                    updateField("isNewArrival", event.target.checked)
+                  }
+                />
+                <span>
+                  <strong>New Arrival</strong>
+                  <small>Display this product in new arrivals.</small>
+                </span>
+              </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.bestSeller}
+                  onChange={(event) =>
+                    updateField("bestSeller", event.target.checked)
+                  }
+                />
+                <span>
+                  <strong>Best Seller</strong>
+                  <small>Mark this product as a best seller.</small>
+                </span>
+              </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.isActive}
+                  onChange={(event) =>
+                    updateField("isActive", event.target.checked)
+                  }
+                />
+                <span>
+                  <strong>Active Product</strong>
+                  <small>Make this product available in the store.</small>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <div className="admin-product-form__actions">
+            <Link
+              to="/admin/products"
+              className="admin-product-form__cancel"
+            >
+              Cancel
+            </Link>
+
+            <button
+              type="submit"
+              className="admin-product-form__submit"
+              disabled={saving || categoriesLoading}
+            >
+              {saving ? (
+                <LoaderCircle size={17} className="is-spinning" />
+              ) : (
+                <Save size={17} />
+              )}
+
+              {saving
+                ? "Saving..."
+                : isEditMode
+                  ? "Save Changes"
+                  : "Create Product"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </main>
+  );
+};
+
+export default AdminProductForm;
+
+
+========== E:\NexMart\frontend\src\features\admin\pages\AdminProducts.jsx ==========
+
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Package,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+} from "lucide-react";
+
+import { Link } from "react-router-dom";
+
+import useAdminProducts from "../hooks/useAdminProducts";
+import AdminProductTable from "../components/AdminProductTable";
+
+import "./admin-products.css";
+
+const AdminProducts = () => {
+  const {
+    products,
+    categories,
+    pagination,
+    filters,
+    searchInput,
+    setSearchInput,
+    updateFilter,
+    changePage,
+    refreshProducts,
+    toggleProductStatus,
+    isLoading,
+    actionLoading,
+    error,
+  } = useAdminProducts();
+
+  return (
+    <main className="admin-products">
+      <div className="admin-products__container">
+        <header className="admin-products__header">
+          <div>
+            <Link to="/admin" className="admin-products__back">
+              <ArrowLeft size={15} />
+              Back to dashboard
+            </Link>
+
+            <span className="admin-products__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>Product Management</h1>
+
+            <p>
+              Manage your catalog, monitor inventory and control
+              product availability.
+            </p>
+          </div>
+
+          <div className="admin-products__header-actions">
+            <div className="admin-products__security">
+              <ShieldCheck size={17} />
+              Authorized Administrator
+            </div>
+
+            <button
+              type="button"
+              className="admin-products__refresh"
+              onClick={refreshProducts}
+              disabled={isLoading}
+            >
+              <RefreshCw
+                size={16}
+                className={isLoading ? "is-spinning" : ""}
+              />
+              Refresh
+            </button>
+
+            <Link
+              to="/admin/products/new"
+              className="admin-products__add"
+            >
+              <Plus size={17} />
+              Add Product
+            </Link>
+          </div>
+        </header>
+
+        <section className="admin-products__overview">
+          <div>
+            <span>Catalog overview</span>
+            <strong>{pagination?.total ?? 0}</strong>
+            <small>Total matching products</small>
+          </div>
+
+          <div>
+            <span>Current page</span>
+            <strong>{pagination?.page ?? 1}</strong>
+            <small>Of {pagination?.pages ?? 0} pages</small>
+          </div>
+
+          <div>
+            <span>Page size</span>
+            <strong>{pagination?.limit ?? 12}</strong>
+            <small>Products per page</small>
+          </div>
+        </section>
+
+        <section className="admin-products__panel">
+          <div className="admin-products__panel-heading">
+            <div>
+              <h2>Product Catalog</h2>
+              <p>
+                Search, filter and manage your store products.
+              </p>
+            </div>
+
+            <SlidersHorizontal size={20} />
+          </div>
+
+          <div className="admin-products__filters">
+            <div className="admin-products__search">
+              <Search size={18} />
+
+              <input
+                type="search"
+                placeholder="Search by product name or SKU..."
+                value={searchInput}
+                onChange={(event) =>
+                  setSearchInput(event.target.value)
+                }
+                aria-label="Search products"
+              />
+            </div>
+
+            <select
+              value={filters.category}
+              onChange={(event) =>
+                updateFilter("category", event.target.value)
+              }
+              aria-label="Filter by category"
+            >
+              <option value="">All categories</option>
+
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={filters.status}
+              onChange={(event) =>
+                updateFilter("status", event.target.value)
+              }
+              aria-label="Filter by product status"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+
+            <select
+              value={filters.stockStatus}
+              onChange={(event) =>
+                updateFilter("stockStatus", event.target.value)
+              }
+              aria-label="Filter by stock status"
+            >
+              <option value="all">All inventory</option>
+              <option value="in_stock">In stock</option>
+              <option value="low_stock">Low stock</option>
+              <option value="out_of_stock">Out of stock</option>
+            </select>
+
+            <select
+              value={filters.sort}
+              onChange={(event) =>
+                updateFilter("sort", event.target.value)
+              }
+              aria-label="Sort products"
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="price_asc">Price: Low to high</option>
+              <option value="price_desc">Price: High to low</option>
+              <option value="name_asc">Name: A to Z</option>
+              <option value="name_desc">Name: Z to A</option>
+            </select>
+          </div>
+
+          {error && (
+            <div className="admin-products__error" role="alert">
+              <AlertTriangle size={18} />
+              <span>{error}</span>
+
+              <button type="button" onClick={refreshProducts}>
+                Try again
+              </button>
+            </div>
+          )}
+
+          <AdminProductTable
+            products={products}
+            isLoading={isLoading}
+            actionLoading={actionLoading}
+            onToggleStatus={toggleProductStatus}
+          />
+
+          <footer className="admin-products__pagination">
+            <span>
+              Showing {products.length} of {pagination?.total ?? 0} products
+            </span>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => changePage(filters.page - 1)}
+                disabled={
+                  !pagination?.hasPreviousPage || isLoading
+                }
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={17} />
+              </button>
+
+              <strong>
+                {pagination?.page ?? 1}
+                <span> / </span>
+                {pagination?.pages ?? 0}
+              </strong>
+
+              <button
+                type="button"
+                onClick={() => changePage(filters.page + 1)}
+                disabled={
+                  !pagination?.hasNextPage || isLoading
+                }
+                aria-label="Next page"
+              >
+                <ChevronRight size={17} />
+              </button>
+            </div>
+          </footer>
+        </section>
+
+        <footer className="admin-products__footer">
+          <Package size={16} />
+          <span>NexaMart secure product management workspace</span>
+        </footer>
+      </div>
+    </main>
+  );
+};
+
+export default AdminProducts;
+
+
+========== E:\NexMart\frontend\src\features\admin\services\adminProductService.js ==========
+
+import apiClient from "../../../lib/apiClient";
+
+const adminProductService = {
+  async getProducts(params = {}, { signal } = {}) {
+    const response = await apiClient.get("/admin/products", {
+      params,
+      signal,
+    });
+
+    return response.data.data;
+  },
+
+  async getCategories({ signal } = {}) {
+    const response = await apiClient.get("/categories", {
+      signal,
+    });
+
+    return response.data.data.categories;
+  },
+
+  async getProductById(productId, { signal } = {}) {
+    const response = await apiClient.get(
+      `/admin/products/${productId}`,
+      { signal }
+    );
+
+    return response.data.data.product;
+  },
+
+  async uploadProductImages(files) {
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error("Kam az kam aik image select karein.");
+    }
+
+    const formData = new FormData();
+
+    files.forEach((file) => {
+      formData.append("images", file);
+    });
+
+    const response = await apiClient.post(
+      "/products/images",
+      formData
+    );
+
+    return response.data.data.images;
+  },
+
+  async createProduct(payload) {
+    const response = await apiClient.post("/products", payload);
+
+    return response.data.data.product ?? response.data.data;
+  },
+
+  async updateProduct(productId, payload) {
+    const response = await apiClient.patch(
+      `/products/${productId}`,
+      payload
+    );
+
+    return response.data.data.product ?? response.data.data;
+  },
+
+  async activateProduct(productId) {
+    const response = await apiClient.patch(
+      `/admin/products/${productId}/activate`
+    );
+
+    return response.data.data.product;
+  },
+
+  async deactivateProduct(productId) {
+    const response = await apiClient.patch(
+      `/admin/products/${productId}/deactivate`
+    );
+
+    return response.data.data.product;
+  },
+};
+
+export default adminProductService;
+
+
+========== E:\NexMart\frontend\src\features\admin\services\adminService.js ==========
+
+import apiClient from "../../../lib/apiClient";
+
+const adminService = {
+  async getDashboard({ signal } = {}) {
+    const response = await apiClient.get("/admin/dashboard", {
+      signal,
+    });
+
+    return response.data.data;
+  },
+};
+
+export default adminService;
+
+
+========== E:\NexMart\frontend\src\features\admin\pages\AdminDashboard.jsx ==========
+
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Boxes,
+  CircleDollarSign,
+  ClipboardList,
+  Package,
+  RefreshCw,
+  ShieldCheck,
+  ShoppingBag,
+  Users,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import useAdminDashboard from "../hooks/useAdminDashboard";
+import "./admin.css";
+
+const formatCurrency = (value = 0) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const formatDate = (date) =>
+  new Intl.DateTimeFormat("en-PK", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(date));
+
+const formatStatus = (status = "") =>
+  status.charAt(0).toUpperCase() + status.slice(1);
+
+const statsConfig = [
+  {
+    key: "totalRevenue",
+    label: "Paid Revenue",
+    icon: CircleDollarSign,
+    format: formatCurrency,
+    description: "Successfully paid orders",
+    color: "revenue",
+  },
+  {
+    key: "totalOrderValue",
+    label: "Total Order Value",
+    icon: ShoppingBag,
+    format: formatCurrency,
+    description: "Value of non-cancelled orders",
+    color: "orders",
+  },
+  {
+    key: "totalOrders",
+    label: "Total Orders",
+    icon: ClipboardList,
+    description: "All orders received",
+    color: "total",
+  },
+  {
+    key: "activeOrders",
+    label: "Active Orders",
+    icon: Activity,
+    description: "Orders currently in progress",
+    color: "active",
+  },
+  {
+    key: "totalProducts",
+    label: "Active Products",
+    icon: Package,
+    description: "Products available in store",
+    color: "products",
+  },
+  {
+    key: "totalCustomers",
+    label: "Customers",
+    icon: Users,
+    description: "Active registered customers",
+    color: "customers",
+  },
+  {
+    key: "lowStockCount",
+    label: "Low Stock Items",
+    icon: AlertTriangle,
+    description: "Products requiring attention",
+    color: "warning",
+  },
+];
+
+const AdminDashboard = () => {
+  const {
+    dashboard,
+    isLoading,
+    error,
+    refreshDashboard,
+  } = useAdminDashboard();
+
+  const stats = dashboard?.stats;
+  const recentOrders = dashboard?.recentOrders || [];
+  const lowStockProducts = dashboard?.lowStockProducts || [];
+
+  return (
+    <main className="admin-dashboard">
+      <div className="admin-dashboard__container">
+        <header className="admin-dashboard__header">
+          <div>
+            <span className="admin-dashboard__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>Dashboard Overview</h1>
+
+            <p>
+              Monitor your store performance and manage operations.
+            </p>
+          </div>
+
+          <div className="admin-dashboard__header-actions">
+            <div className="admin-dashboard__security">
+              <ShieldCheck size={18} />
+              <span>Authorized Administrator</span>
+              <Link
+  to="/admin/products"
+  className="admin-dashboard__manage-products"
+>
+  <Package size={17} />
+  <span>Manage Products</span>
+</Link>
+            </div>
+
+            <button
+              type="button"
+              className="admin-dashboard__refresh"
+              onClick={refreshDashboard}
+              disabled={isLoading}
+              aria-label="Refresh dashboard"
+            >
+              <RefreshCw
+                size={17}
+                className={isLoading ? "is-spinning" : ""}
+              />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </header>
+
+        {error && (
+          <div className="admin-dashboard__error" role="alert">
+            <AlertTriangle size={19} />
+            <span>{error}</span>
+
+            <button type="button" onClick={refreshDashboard}>
+              Try again
+            </button>
+          </div>
+        )}
+
+        <section className="admin-dashboard__section">
+          <div className="admin-dashboard__section-heading">
+            <div>
+              <h2>Store Performance</h2>
+              <p>Your store's key business metrics.</p>
+            </div>
+
+            <span className="admin-dashboard__live">
+              <span />
+              Live data
+            </span>
+          </div>
+
+          <div className="admin-dashboard__stats">
+            {statsConfig.map((item) => {
+              const Icon = item.icon;
+              const value = stats?.[item.key] ?? 0;
+
+              return (
+                <article
+                  className={`admin-stat admin-stat--${item.color}`}
+                  key={item.key}
+                >
+                  <div className="admin-stat__top">
+                    <span>{item.label}</span>
+
+                    <div className="admin-stat__icon">
+                      <Icon size={20} />
+                    </div>
+                  </div>
+
+                  <strong>
+                    {item.format ? item.format(value) : value}
+                  </strong>
+
+                  <p>{item.description}</p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="admin-dashboard__section admin-dashboard__section--tables">
+          <div className="admin-dashboard__panel">
+            <div className="admin-dashboard__panel-header">
+              <div>
+                <h2>Recent Orders</h2>
+                <p>Latest customer transactions.</p>
+              </div>
+
+              <ClipboardList size={20} />
+            </div>
+
+            {isLoading && !dashboard ? (
+              <div className="admin-dashboard__empty">
+                Loading orders...
+              </div>
+            ) : recentOrders.length === 0 ? (
+              <div className="admin-dashboard__empty">
+                No orders available yet.
+              </div>
+            ) : (
+              <div className="admin-dashboard__table-wrap">
+                <table className="admin-dashboard__table">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Customer</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {recentOrders.map((order) => (
+                      <tr key={order._id}>
+                        <td className="admin-dashboard__order-number">
+                          {order.orderNumber}
+                        </td>
+
+                        <td>{order.customer?.fullName || "Customer"}</td>
+
+                        <td className="admin-dashboard__amount">
+                          {formatCurrency(order.total)}
+                        </td>
+
+                        <td>
+                          <span
+                            className={`admin-status admin-status--${order.status}`}
+                          >
+                            {formatStatus(order.status)}
+                          </span>
+                        </td>
+
+                        <td>{formatDate(order.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="admin-dashboard__panel">
+            <div className="admin-dashboard__panel-header">
+              <div>
+                <h2>Inventory Alerts</h2>
+                <p>Products requiring restocking.</p>
+              </div>
+
+              <Boxes size={20} />
+            </div>
+
+            {isLoading && !dashboard ? (
+              <div className="admin-dashboard__empty">
+                Loading inventory...
+              </div>
+            ) : lowStockProducts.length === 0 ? (
+              <div className="admin-dashboard__empty">
+                <Package size={28} />
+                <span>All inventory levels look healthy.</span>
+              </div>
+            ) : (
+              <div className="admin-inventory">
+                {lowStockProducts.map((product) => (
+                  <div
+                    className="admin-inventory__item"
+                    key={product._id}
+                  >
+                    <div className="admin-inventory__details">
+                      <strong>{product.name}</strong>
+                      <span>{product.sku}</span>
+                    </div>
+
+                    <span
+                      className={`admin-inventory__stock ${
+                        product.stock === 0 ? "is-out" : ""
+                      }`}
+                    >
+                      {product.stock === 0
+                        ? "Out of stock"
+                        : `${product.stock} left`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <footer className="admin-dashboard__footer">
+          <ShieldCheck size={16} />
+          <span>NexaMart secure administration workspace</span>
+        </footer>
+      </div>
+    </main>
+  );
+};
+
+export default AdminDashboard;
+
+
+========== E:\NexMart\frontend\src\features\admin\pages\AdminProductForm.jsx ==========
+
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  Image as ImageIcon,
+  LoaderCircle,
+  Save,
+  ShieldCheck,
+  Upload,
+  X,
+  Star,
+} from "lucide-react";
+import {
+  Link,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
+
+import adminProductService from "../services/adminProductService";
+
+import "./admin-product-form.css";
+
+const INITIAL_FORM = {
+  sku: "",
+  slug: "",
+  name: "",
+  category: "",
+  categoryId: "",
+  price: "",
+  compareAtPrice: "",
+  badge: "",
+  description: "",
+  stock: "0",
+  isNewArrival: false,
+  bestSeller: false,
+  isActive: true,
+};
+
+const MAX_IMAGES = 8;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+];
+
+const slugify = (value) =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const getErrorMessage = (error) =>
+  error.response?.data?.message ||
+  error.message ||
+  "Something went wrong. Please try again.";
+
+const createImageId = (file, index) =>
+  `${Date.now()}-${index}-${file.name}`;
+
+const AdminProductForm = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+
+  const isEditMode = Boolean(id);
+
+  const fileInputRef = useRef(null);
+  const objectUrlsRef = useRef(new Set());
+
+  const [form, setForm] = useState(INITIAL_FORM);
+  const [images, setImages] = useState([]);
+  const [mainImageId, setMainImageId] = useState(null);
+
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [loading, setLoading] = useState(isEditMode);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // Load active categories.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadCategories = async () => {
+      try {
+        setCategoriesLoading(true);
+
+        const data = await adminProductService.getCategories({
+          signal: controller.signal,
+        });
+
+        setCategories(Array.isArray(data) ? data : []);
+      } catch (requestError) {
+        if (
+          requestError.code === "ERR_CANCELED" ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setError(getErrorMessage(requestError));
+      } finally {
+        if (!controller.signal.aborted) {
+          setCategoriesLoading(false);
+        }
+      }
+    };
+
+    loadCategories();
+
+    return () => controller.abort();
+  }, []);
+
+  // Release temporary image previews.
+  useEffect(() => {
+    return () => {
+      objectUrlsRef.current.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+
+      objectUrlsRef.current.clear();
+    };
+  }, []);
+
+  // Load existing product in edit mode.
+  useEffect(() => {
+    if (!isEditMode) return undefined;
+
+    const controller = new AbortController();
+
+    const loadProduct = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const product = await adminProductService.getProductById(
+          id,
+          { signal: controller.signal }
+        );
+
+        setForm({
+          sku: product.sku ?? "",
+          slug: product.slug ?? "",
+          name: product.name ?? "",
+          category: product.category ?? "",
+          categoryId: product.categoryId ?? "",
+          price: String(product.price ?? ""),
+          compareAtPrice:
+            product.compareAtPrice == null
+              ? ""
+              : String(product.compareAtPrice),
+          badge: product.badge ?? "",
+          description: product.description ?? "",
+          stock: String(product.stock ?? 0),
+          isNewArrival: Boolean(product.isNewArrival),
+          bestSeller: Boolean(product.bestSeller),
+          isActive: Boolean(product.isActive),
+        });
+
+        const existingImages = Array.isArray(product.images)
+          ? product.images.map((image, index) => ({
+              id: image.publicId || `existing-${index}`,
+              url: image.url,
+              publicId: image.publicId,
+              file: null,
+              previewUrl: image.url,
+              isExisting: true,
+            }))
+          : [];
+
+        const initialImages = existingImages.length
+          ? existingImages
+          : product.image
+            ? [
+                {
+                  id: "legacy-image",
+                  url: product.image,
+                  publicId: null,
+                  file: null,
+                  previewUrl: product.image,
+                  isExisting: true,
+                  isLegacy: true,
+                },
+              ]
+            : [];
+
+        setImages(initialImages);
+        setMainImageId(initialImages[0]?.id ?? null);
+        setSlugTouched(true);
+      } catch (requestError) {
+        if (
+          requestError.code === "ERR_CANCELED" ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setError(getErrorMessage(requestError));
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadProduct();
+
+    return () => controller.abort();
+  }, [id, isEditMode]);
+
+  const updateField = (name, value) => {
+    setForm((current) => {
+      const updated = { ...current, [name]: value };
+
+      if (name === "name" && !slugTouched) {
+        updated.slug = slugify(value);
+      }
+
+      return updated;
+    });
+  };
+
+  const handleCategoryChange = (event) => {
+    const categoryId = event.target.value;
+
+    const selectedCategory = categories.find(
+      (category) => category._id === categoryId
+    );
+
+    if (selectedCategory) {
+      setForm((current) => ({
+        ...current,
+        categoryId: selectedCategory._id,
+        category: selectedCategory.name,
+      }));
+
+      return;
+    }
+
+    // Preserve an existing legacy category.
+    setForm((current) => ({
+      ...current,
+      categoryId: "",
+    }));
+  };
+
+  const releaseImagePreview = (url) => {
+    if (!url || !objectUrlsRef.current.has(url)) return;
+
+    URL.revokeObjectURL(url);
+    objectUrlsRef.current.delete(url);
+  };
+
+  const handleImageSelection = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+
+    event.target.value = "";
+
+    if (!selectedFiles.length) return;
+
+    setError("");
+
+    const availableSlots = MAX_IMAGES - images.length;
+
+    if (availableSlots <= 0) {
+      setError(`Maximum ${MAX_IMAGES} images allowed hain.`);
+      return;
+    }
+
+    const acceptedFiles = [];
+    const validationErrors = [];
+
+    selectedFiles.forEach((file) => {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        validationErrors.push(
+          `${file.name}: Unsupported image format.`
+        );
+        return;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE) {
+        validationErrors.push(
+          `${file.name}: Image size 5MB se zyada hai.`
+        );
+        return;
+      }
+
+      acceptedFiles.push(file);
+    });
+
+    const filesToAdd = acceptedFiles.slice(0, availableSlots);
+
+    if (acceptedFiles.length > availableSlots) {
+      validationErrors.push(
+        `Sirf ${availableSlots} additional images add ho sakti hain.`
+      );
+    }
+
+    if (validationErrors.length) {
+      setError(validationErrors.join(" "));
+    }
+
+    if (!filesToAdd.length) return;
+
+    const newImages = filesToAdd.map((file, index) => {
+      const previewUrl = URL.createObjectURL(file);
+
+      objectUrlsRef.current.add(previewUrl);
+
+      return {
+        id: createImageId(file, index),
+        url: "",
+        publicId: null,
+        file,
+        previewUrl,
+        isExisting: false,
+      };
+    });
+
+    if (!images.some((image) => !image.isLegacy)) {
+      setMainImageId(newImages[0].id);
+    }
+
+    setImages((current) => [...current, ...newImages]);
+  };
+
+  const handleRemoveImage = (imageId) => {
+    const targetImage = images.find(
+      (image) => image.id === imageId
+    );
+
+    if (!targetImage) return;
+
+    releaseImagePreview(targetImage.previewUrl);
+
+    const updatedImages = images.filter(
+      (image) => image.id !== imageId
+    );
+
+    setImages(updatedImages);
+
+    if (mainImageId === imageId) {
+      setMainImageId(updatedImages[0]?.id ?? null);
+    }
+  };
+
+  const handleSetMainImage = (imageId) => {
+    const targetImage = images.find(
+      (image) => image.id === imageId
+    );
+
+    if (!targetImage) return;
+
+    if (
+      targetImage.isLegacy &&
+      images.some((image) => !image.isLegacy)
+    ) {
+      setError(
+        "Cloudinary images mein se main image select karein."
+      );
+      return;
+    }
+
+    setMainImageId(imageId);
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    setError("");
+
+    const mainImage =
+      images.find((image) => image.id === mainImageId) ??
+      images[0] ??
+      null;
+
+    if (!mainImage) {
+      setError("Kam az kam aik product image select karein.");
+      return;
+    }
+
+    if (mainImage.id !== mainImageId) {
+      setMainImageId(mainImage.id);
+    }
+
+    const payload = {
+      ...form,
+      sku: form.sku.trim().toUpperCase(),
+      slug: form.slug.trim(),
+      name: form.name.trim(),
+      category: form.category.trim(),
+      price: Number(form.price),
+      compareAtPrice:
+        form.compareAtPrice.trim() === ""
+          ? null
+          : Number(form.compareAtPrice),
+      badge: form.badge.trim() || null,
+      description: form.description.trim(),
+      stock: Number(form.stock),
+      isNewArrival: Boolean(form.isNewArrival),
+      bestSeller: Boolean(form.bestSeller),
+      isActive: Boolean(form.isActive),
+    };
+
+    const selectedCategory = categories.find(
+      (category) =>
+        category._id === form.categoryId ||
+        category.name === form.category
+    );
+
+    if (selectedCategory) {
+      payload.categoryId = selectedCategory._id;
+      payload.category = selectedCategory.name;
+    } else if (form.categoryId) {
+      setError(
+        "Selected category available nahi hai. Dobara select karein."
+      );
+      return;
+    } else {
+      delete payload.categoryId;
+    }
+
+    if (
+      !Number.isFinite(payload.price) ||
+      payload.price < 0 ||
+      !Number.isInteger(payload.stock) ||
+      payload.stock < 0
+    ) {
+      setError(
+        "Price aur stock valid non-negative numbers hone chahiye."
+      );
+      return;
+    }
+
+    if (
+      payload.compareAtPrice !== null &&
+      (!Number.isFinite(payload.compareAtPrice) ||
+        payload.compareAtPrice <= payload.price)
+    ) {
+      setError(
+        "Compare-at price selling price se zyada honi chahiye."
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const newImages = images.filter(
+        (image) => image.file
+      );
+
+      let uploadedImages = [];
+
+      if (newImages.length) {
+        uploadedImages =
+          await adminProductService.uploadProductImages(
+            newImages.map((image) => image.file)
+          );
+      }
+
+      let uploadIndex = 0;
+
+      const resolvedImages = images.map((image) => {
+        if (!image.file) return image;
+
+        const uploadedImage = uploadedImages[uploadIndex];
+
+        uploadIndex += 1;
+
+        if (!uploadedImage?.url || !uploadedImage?.publicId) {
+          throw new Error(
+            "Image upload response invalid hai. Dobara try karein."
+          );
+        }
+
+        return {
+          ...image,
+          url: uploadedImage.url,
+          publicId: uploadedImage.publicId,
+        };
+      });
+
+      const orderedImages = [
+        ...resolvedImages.filter(
+          (image) => image.id === mainImageId
+        ),
+        ...resolvedImages.filter(
+          (image) => image.id !== mainImageId
+        ),
+      ];
+
+      const primaryImage = orderedImages[0];
+
+      payload.image = primaryImage.url;
+
+      const cloudinaryImages = orderedImages
+        .filter((image) => image.publicId)
+        .map(({ url, publicId }) => ({
+          url,
+          publicId,
+        }));
+
+      payload.images = cloudinaryImages;
+
+      if (isEditMode) {
+        delete payload.sku;
+
+        await adminProductService.updateProduct(
+          id,
+          payload
+        );
+      } else {
+        await adminProductService.createProduct(payload);
+      }
+
+      navigate("/admin/products", {
+        replace: true,
+        state: {
+          message: isEditMode
+            ? "Product updated successfully."
+            : "Product created successfully.",
+        },
+      });
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <main className="admin-product-form">
+        <div className="admin-product-form__state">
+          <LoaderCircle className="is-spinning" size={28} />
+          <span>Loading product details...</span>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="admin-product-form">
+      <div className="admin-product-form__container">
+        <header className="admin-product-form__header">
+          <div>
+            <Link
+              to="/admin/products"
+              className="admin-product-form__back"
+            >
+              <ArrowLeft size={16} />
+              Back to products
+            </Link>
+
+            <span className="admin-product-form__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>
+              {isEditMode ? "Edit Product" : "Create Product"}
+            </h1>
+
+            <p>
+              {isEditMode
+                ? "Update your product information and catalog settings."
+                : "Add a new product to your NexaMart catalog."}
+            </p>
+          </div>
+
+          <div className="admin-product-form__security">
+            <ShieldCheck size={17} />
+            Authorized Administrator
+          </div>
+        </header>
+
+        {error && (
+          <div className="admin-product-form__error" role="alert">
+            {error}
+          </div>
+        )}
+
+        <form
+          className="admin-product-form__layout"
+          onSubmit={handleSubmit}
+        >
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Product Information</h2>
+              <p>Basic details displayed in your store catalog.</p>
+            </div>
+
+            <div className="admin-product-form__grid">
+              <label className="admin-product-form__field">
+                <span>Product Name *</span>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(event) =>
+                    updateField("name", event.target.value)
+                  }
+                  minLength={2}
+                  maxLength={160}
+                  required
+                  placeholder="Enter product name"
+                />
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>SKU *</span>
+                <input
+                  type="text"
+                  value={form.sku}
+                  onChange={(event) =>
+                    updateField(
+                      "sku",
+                      event.target.value.toUpperCase()
+                    )
+                  }
+                  minLength={3}
+                  maxLength={40}
+                  required
+                  readOnly={isEditMode}
+                  placeholder="e.g. NM-009"
+                />
+                {isEditMode && (
+                  <small>SKU cannot be changed after creation.</small>
+                )}
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Product Slug *</span>
+                <input
+                  type="text"
+                  value={form.slug}
+                  onChange={(event) => {
+                    setSlugTouched(true);
+                    updateField("slug", slugify(event.target.value));
+                  }}
+                  minLength={3}
+                  maxLength={180}
+                  pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                  required
+                  placeholder="product-url-slug"
+                />
+                <small>Used in the product URL.</small>
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Category *</span>
+                <select
+                  value={
+                    form.categoryId ||
+                    (form.category ? `legacy:${form.category}` : "")
+                  }
+                  onChange={handleCategoryChange}
+                  required
+                  disabled={categoriesLoading || saving}
+                >
+                  <option value="">
+                    {categoriesLoading
+                      ? "Loading categories..."
+                      : "Select a category"}
+                  </option>
+
+                  {categories.map((category) => (
+                    <option
+                      key={category._id}
+                      value={category._id}
+                    >
+                      {category.name}
+                    </option>
+                  ))}
+
+                  {form.category &&
+                    !categories.some(
+                      (category) =>
+                        category._id === form.categoryId ||
+                        category.name === form.category
+                    ) && (
+                      <option value={`legacy:${form.category}`}>
+                        {form.category} (Legacy)
+                      </option>
+                    )}
+                </select>
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Badge</span>
+                <input
+                  type="text"
+                  value={form.badge}
+                  onChange={(event) =>
+                    updateField("badge", event.target.value)
+                  }
+                  maxLength={60}
+                  placeholder="e.g. Best Value"
+                />
+              </label>
+            </div>
+
+            <label className="admin-product-form__field admin-product-form__description">
+              <span>Description *</span>
+              <textarea
+                value={form.description}
+                onChange={(event) =>
+                  updateField("description", event.target.value)
+                }
+                minLength={10}
+                maxLength={3000}
+                rows={6}
+                required
+                placeholder="Write a detailed product description..."
+              />
+              <small>
+                {form.description.length}/3000 characters
+              </small>
+            </label>
+          </section>
+
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Product Images</h2>
+              <p>
+                Computer se images select karein. Main image
+                storefront par primary image hogi.
+              </p>
+            </div>
+
+            <div className="admin-product-form__upload">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/avif"
+                multiple
+                hidden
+                onChange={handleImageSelection}
+              />
+
+              <button
+                type="button"
+                className="admin-product-form__upload-button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={saving || images.length >= MAX_IMAGES}
+              >
+                <Upload size={19} />
+                <span>
+                  {images.length >= MAX_IMAGES
+                    ? "Image limit reached"
+                    : "Choose images from computer"}
+                </span>
+              </button>
+
+              <p className="admin-product-form__upload-hint">
+                JPEG, PNG, WEBP, AVIF Â· Maximum 5MB each Â·
+                Maximum 8 images
+              </p>
+            </div>
+
+            <div className="admin-product-form__image-count">
+              <span>Selected images</span>
+              <strong>
+                {images.length}/{MAX_IMAGES}
+              </strong>
+            </div>
+
+            {images.length ? (
+              <div className="admin-product-form__image-grid">
+                {images.map((image) => {
+                  const isMain = image.id === mainImageId;
+
+                  return (
+                    <article
+                      className={`admin-product-form__image-card ${
+                        isMain ? "is-main" : ""
+                      }`}
+                      key={image.id}
+                    >
+                      <div className="admin-product-form__image-frame">
+                        <img
+                          src={image.previewUrl}
+                          alt="Product"
+                        />
+
+                        {isMain && (
+                          <span className="admin-product-form__main-badge">
+                            <Star size={12} fill="currentColor" />
+                            Main Image
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          className="admin-product-form__image-remove"
+                          onClick={() => handleRemoveImage(image.id)}
+                          disabled={saving}
+                          aria-label="Remove image"
+                          title="Remove image"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+
+                      <div className="admin-product-form__image-meta">
+                        {!isMain && (
+                          <button
+                            type="button"
+                            className="admin-product-form__main-action"
+                            onClick={() =>
+                              handleSetMainImage(image.id)
+                            }
+                            disabled={saving}
+                          >
+                            Set as main
+                          </button>
+                        )}
+
+                        {image.file && (
+                          <small>
+                            {(image.file.size / (1024 * 1024)).toFixed(2)} MB
+                          </small>
+                        )}
+
+                        {image.isLegacy && (
+                          <small>Existing legacy image</small>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="admin-product-form__empty-images">
+                <ImageIcon size={34} />
+                <span>No product images selected.</span>
+                <small>At least one image is required.</small>
+              </div>
+            )}
+          </section>
+
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Pricing & Inventory</h2>
+              <p>Configure product pricing and stock availability.</p>
+            </div>
+
+            <div className="admin-product-form__grid">
+              <label className="admin-product-form__field">
+                <span>Selling Price (PKR) *</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(event) =>
+                    updateField("price", event.target.value)
+                  }
+                  required
+                  placeholder="0"
+                />
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Compare-at Price (PKR)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.compareAtPrice}
+                  onChange={(event) =>
+                    updateField("compareAtPrice", event.target.value)
+                  }
+                  placeholder="Optional"
+                />
+                <small>Must be higher than selling price.</small>
+              </label>
+
+              <label className="admin-product-form__field">
+                <span>Stock Quantity *</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.stock}
+                  onChange={(event) =>
+                    updateField("stock", event.target.value)
+                  }
+                  required
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="admin-product-form__panel">
+            <div className="admin-product-form__section-heading">
+              <h2>Catalog Settings</h2>
+              <p>Control product visibility and merchandising.</p>
+            </div>
+
+            <div className="admin-product-form__toggles">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.isNewArrival}
+                  onChange={(event) =>
+                    updateField("isNewArrival", event.target.checked)
+                  }
+                />
+                <span>
+                  <strong>New Arrival</strong>
+                  <small>Display this product in new arrivals.</small>
+                </span>
+              </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.bestSeller}
+                  onChange={(event) =>
+                    updateField("bestSeller", event.target.checked)
+                  }
+                />
+                <span>
+                  <strong>Best Seller</strong>
+                  <small>Mark this product as a best seller.</small>
+                </span>
+              </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.isActive}
+                  onChange={(event) =>
+                    updateField("isActive", event.target.checked)
+                  }
+                />
+                <span>
+                  <strong>Active Product</strong>
+                  <small>Make this product available in the store.</small>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <div className="admin-product-form__actions">
+            <Link
+              to="/admin/products"
+              className="admin-product-form__cancel"
+            >
+              Cancel
+            </Link>
+
+            <button
+              type="submit"
+              className="admin-product-form__submit"
+              disabled={saving || categoriesLoading}
+            >
+              {saving ? (
+                <LoaderCircle size={17} className="is-spinning" />
+              ) : (
+                <Save size={17} />
+              )}
+
+              {saving
+                ? "Saving..."
+                : isEditMode
+                  ? "Save Changes"
+                  : "Create Product"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </main>
+  );
+};
+
+export default AdminProductForm;
+
+
+========== E:\NexMart\frontend\src\features\admin\pages\AdminProducts.jsx ==========
+
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Package,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+} from "lucide-react";
+
+import { Link } from "react-router-dom";
+
+import useAdminProducts from "../hooks/useAdminProducts";
+import AdminProductTable from "../components/AdminProductTable";
+
+import "./admin-products.css";
+
+const AdminProducts = () => {
+  const {
+    products,
+    categories,
+    pagination,
+    filters,
+    searchInput,
+    setSearchInput,
+    updateFilter,
+    changePage,
+    refreshProducts,
+    toggleProductStatus,
+    isLoading,
+    actionLoading,
+    error,
+  } = useAdminProducts();
+
+  return (
+    <main className="admin-products">
+      <div className="admin-products__container">
+        <header className="admin-products__header">
+          <div>
+            <Link to="/admin" className="admin-products__back">
+              <ArrowLeft size={15} />
+              Back to dashboard
+            </Link>
+
+            <span className="admin-products__eyebrow">
+              NEXAMART ADMINISTRATION
+            </span>
+
+            <h1>Product Management</h1>
+
+            <p>
+              Manage your catalog, monitor inventory and control
+              product availability.
+            </p>
+          </div>
+
+          <div className="admin-products__header-actions">
+            <div className="admin-products__security">
+              <ShieldCheck size={17} />
+              Authorized Administrator
+            </div>
+
+            <button
+              type="button"
+              className="admin-products__refresh"
+              onClick={refreshProducts}
+              disabled={isLoading}
+            >
+              <RefreshCw
+                size={16}
+                className={isLoading ? "is-spinning" : ""}
+              />
+              Refresh
+            </button>
+
+            <Link
+              to="/admin/products/new"
+              className="admin-products__add"
+            >
+              <Plus size={17} />
+              Add Product
+            </Link>
+          </div>
+        </header>
+
+        <section className="admin-products__overview">
+          <div>
+            <span>Catalog overview</span>
+            <strong>{pagination?.total ?? 0}</strong>
+            <small>Total matching products</small>
+          </div>
+
+          <div>
+            <span>Current page</span>
+            <strong>{pagination?.page ?? 1}</strong>
+            <small>Of {pagination?.pages ?? 0} pages</small>
+          </div>
+
+          <div>
+            <span>Page size</span>
+            <strong>{pagination?.limit ?? 12}</strong>
+            <small>Products per page</small>
+          </div>
+        </section>
+
+        <section className="admin-products__panel">
+          <div className="admin-products__panel-heading">
+            <div>
+              <h2>Product Catalog</h2>
+              <p>
+                Search, filter and manage your store products.
+              </p>
+            </div>
+
+            <SlidersHorizontal size={20} />
+          </div>
+
+          <div className="admin-products__filters">
+            <div className="admin-products__search">
+              <Search size={18} />
+
+              <input
+                type="search"
+                placeholder="Search by product name or SKU..."
+                value={searchInput}
+                onChange={(event) =>
+                  setSearchInput(event.target.value)
+                }
+                aria-label="Search products"
+              />
+            </div>
+
+            <select
+              value={filters.category}
+              onChange={(event) =>
+                updateFilter("category", event.target.value)
+              }
+              aria-label="Filter by category"
+            >
+              <option value="">All categories</option>
+
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={filters.status}
+              onChange={(event) =>
+                updateFilter("status", event.target.value)
+              }
+              aria-label="Filter by product status"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+
+            <select
+              value={filters.stockStatus}
+              onChange={(event) =>
+                updateFilter("stockStatus", event.target.value)
+              }
+              aria-label="Filter by stock status"
+            >
+              <option value="all">All inventory</option>
+              <option value="in_stock">In stock</option>
+              <option value="low_stock">Low stock</option>
+              <option value="out_of_stock">Out of stock</option>
+            </select>
+
+            <select
+              value={filters.sort}
+              onChange={(event) =>
+                updateFilter("sort", event.target.value)
+              }
+              aria-label="Sort products"
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="price_asc">Price: Low to high</option>
+              <option value="price_desc">Price: High to low</option>
+              <option value="name_asc">Name: A to Z</option>
+              <option value="name_desc">Name: Z to A</option>
+            </select>
+          </div>
+
+          {error && (
+            <div className="admin-products__error" role="alert">
+              <AlertTriangle size={18} />
+              <span>{error}</span>
+
+              <button type="button" onClick={refreshProducts}>
+                Try again
+              </button>
+            </div>
+          )}
+
+          <AdminProductTable
+            products={products}
+            isLoading={isLoading}
+            actionLoading={actionLoading}
+            onToggleStatus={toggleProductStatus}
+          />
+
+          <footer className="admin-products__pagination">
+            <span>
+              Showing {products.length} of {pagination?.total ?? 0} products
+            </span>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => changePage(filters.page - 1)}
+                disabled={
+                  !pagination?.hasPreviousPage || isLoading
+                }
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={17} />
+              </button>
+
+              <strong>
+                {pagination?.page ?? 1}
+                <span> / </span>
+                {pagination?.pages ?? 0}
+              </strong>
+
+              <button
+                type="button"
+                onClick={() => changePage(filters.page + 1)}
+                disabled={
+                  !pagination?.hasNextPage || isLoading
+                }
+                aria-label="Next page"
+              >
+                <ChevronRight size={17} />
+              </button>
+            </div>
+          </footer>
+        </section>
+
+        <footer className="admin-products__footer">
+          <Package size={16} />
+          <span>NexaMart secure product management workspace</span>
+        </footer>
+      </div>
+    </main>
+  );
+};
+
+export default AdminProducts;
+
+
+========== E:\NexMart\frontend\src\features\admin\components\AdminProductTable.jsx ==========
+
+import {
+  AlertTriangle,
+  Edit3,
+  LoaderCircle,
+  Package,
+  Power,
+  PowerOff,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+
+const formatCurrency = (value = 0) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const getStockStatus = (stock) => {
+  if (stock === 0) {
+    return { label: "Out of stock", className: "out" };
+  }
+
+  if (stock <= 5) {
+    return { label: "Low stock", className: "low" };
+  }
+
+  return { label: "In stock", className: "available" };
+};
+
+const AdminProductTable = ({
+  products,
+  isLoading,
+  actionLoading,
+  onToggleStatus,
+}) => {
+  if (isLoading && products.length === 0) {
+    return (
+      <div className="admin-products__state">
+        <Package size={30} />
+        <span>Loading products...</span>
+      </div>
+    );
+  }
+
+  if (!isLoading && products.length === 0) {
+    return (
+      <div className="admin-products__state">
+        <Package size={34} />
+        <strong>No products found</strong>
+        <span>Try changing your search or filters.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-products__table-wrap">
+      <table className="admin-products__table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Category</th>
+            <th>Price</th>
+            <th>Inventory</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {products.map((product) => {
+            const stock = getStockStatus(product.stock);
+            const isUpdating = actionLoading === product._id;
+
+            return (
+              <tr key={product._id}>
+                <td>
+                  <div className="admin-products__product">
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      loading="lazy"
+                    />
+
+                    <div>
+                      <strong>{product.name}</strong>
+                      <span>{product.slug}</span>
+                    </div>
+                  </div>
+                </td>
+
+                <td className="admin-products__sku">
+                  {product.sku}
+                </td>
+
+                <td>{product.category}</td>
+
+                <td className="admin-products__price">
+                  {formatCurrency(product.price)}
+                </td>
+
+                <td>
+                  <span
+                    className={`admin-products__stock admin-products__stock--${stock.className}`}
+                  >
+                    {stock.className === "out" && (
+                      <AlertTriangle size={13} />
+                    )}
+                    {product.stock} Â· {stock.label}
+                  </span>
+                </td>
+
+                <td>
+                  <span
+                    className={`admin-products__status ${
+                      product.isActive ? "is-active" : "is-inactive"
+                    }`}
+                  >
+                    <span />
+                    {product.isActive ? "Active" : "Inactive"}
+                  </span>
+                </td>
+
+                <td>
+                  <div className="admin-products__actions">
+                    <Link
+                      to={`/admin/products/${product._id}/edit`}
+                      className="admin-products__edit"
+                      aria-label={`Edit ${product.name}`}
+                      title="Edit product"
+                    >
+                      <Edit3 size={17} />
+                    </Link>
+
+                    <button
+                      type="button"
+                      className={`admin-products__action ${
+                        product.isActive
+                          ? "is-deactivate"
+                          : "is-activate"
+                      }`}
+                      onClick={() => onToggleStatus(product)}
+                      disabled={Boolean(actionLoading)}
+                      aria-label={
+                        product.isActive
+                          ? `Deactivate ${product.name}`
+                          : `Activate ${product.name}`
+                      }
+                      title={
+                        product.isActive
+                          ? "Deactivate product"
+                          : "Activate product"
+                      }
+                    >
+                      {isUpdating ? (
+                        <LoaderCircle
+                          size={17}
+                          className="is-spinning"
+                        />
+                      ) : product.isActive ? (
+                        <PowerOff size={17} />
+                      ) : (
+                        <Power size={17} />
+                      )}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+export default AdminProductTable;
+
+
+========== E:\NexMart\frontend\src\features\admin\components\ProtectedAdminRoute.jsx ==========
+import { Navigate, Outlet } from "react-router-dom";
+
+import useAccount from "../../account/hooks/useAccount";
+
+const ProtectedAdminRoute = () => {
+  const {
+    currentUser,
+    isAuthenticated,
+    isLoading,
+  } = useAccount();
+
+  if (isLoading) {
+    return (
+      <div className="admin-auth-loading" role="status">
+        Verifying administrator access...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (currentUser?.role !== "admin") {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Outlet />;
+};
+
+export default ProtectedAdminRoute;
+
+========== E:\NexMart\frontend\src\features\admin\services\adminProductService.js ==========
+
+import apiClient from "../../../lib/apiClient";
+
+const adminProductService = {
+  async getProducts(params = {}, { signal } = {}) {
+    const response = await apiClient.get("/admin/products", {
+      params,
+      signal,
+    });
+
+    return response.data.data;
+  },
+
+  async getCategories({ signal } = {}) {
+    const response = await apiClient.get("/categories", {
+      signal,
+    });
+
+    return response.data.data.categories;
+  },
+
+  async getProductById(productId, { signal } = {}) {
+    const response = await apiClient.get(
+      `/admin/products/${productId}`,
+      { signal }
+    );
+
+    return response.data.data.product;
+  },
+
+  async uploadProductImages(files) {
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error("Kam az kam aik image select karein.");
+    }
+
+    const formData = new FormData();
+
+    files.forEach((file) => {
+      formData.append("images", file);
+    });
+
+    const response = await apiClient.post(
+      "/products/images",
+      formData
+    );
+
+    return response.data.data.images;
+  },
+
+  async createProduct(payload) {
+    const response = await apiClient.post("/products", payload);
+
+    return response.data.data.product ?? response.data.data;
+  },
+
+  async updateProduct(productId, payload) {
+    const response = await apiClient.patch(
+      `/products/${productId}`,
+      payload
+    );
+
+    return response.data.data.product ?? response.data.data;
+  },
+
+  async activateProduct(productId) {
+    const response = await apiClient.patch(
+      `/admin/products/${productId}/activate`
+    );
+
+    return response.data.data.product;
+  },
+
+  async deactivateProduct(productId) {
+    const response = await apiClient.patch(
+      `/admin/products/${productId}/deactivate`
+    );
+
+    return response.data.data.product;
+  },
+};
+
+export default adminProductService;
+
+
+========== E:\NexMart\frontend\src\features\admin\services\adminService.js ==========
+
+import apiClient from "../../../lib/apiClient";
+
+const adminService = {
+  async getDashboard({ signal } = {}) {
+    const response = await apiClient.get("/admin/dashboard", {
+      signal,
+    });
+
+    return response.data.data;
+  },
+};
+
+export default adminService;
+
+
+========== E:\NexMart\frontend\src\features\admin\hooks\useAdminDashboard.js ==========
+
+import { useCallback, useEffect, useState } from "react";
+
+import adminService from "../services/adminService";
+
+const useAdminDashboard = () => {
+  const [dashboard, setDashboard] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const fetchDashboard = useCallback(async (signal) => {
+    try {
+      setError("");
+
+      const data = await adminService.getDashboard({ signal });
+
+      setDashboard(data);
+    } catch (error) {
+      if (error.code === "ERR_CANCELED") {
+        return;
+      }
+
+      setError(
+        error.response?.data?.message ||
+          "Unable to load dashboard data. Please try again."
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetchDashboard(controller.signal);
+
+    return () => controller.abort();
+  }, [fetchDashboard]);
+
+  const refreshDashboard = useCallback(() => {
+    setIsLoading(true);
+    fetchDashboard();
+  }, [fetchDashboard]);
+
+  return {
+    dashboard,
+    isLoading,
+    error,
+    refreshDashboard,
+  };
+};
+
+export default useAdminDashboard;
+
+
+========== E:\NexMart\frontend\src\features\admin\hooks\useAdminProducts.js ==========
+
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import adminProductService from "../services/adminProductService";
+
+const INITIAL_FILTERS = {
+  search: "",
+  category: "",
+  status: "all",
+  stockStatus: "all",
+  sort: "newest",
+  page: 1,
+  limit: 12,
+};
+
+const useAdminProducts = () => {
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [pagination, setPagination] = useState(null);
+
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [searchInput, setSearchInput] = useState("");
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState("");
+  const [error, setError] = useState("");
+
+  const fetchProducts = useCallback(async (signal) => {
+    try {
+      setError("");
+
+      const params = {
+        ...filters,
+        category: filters.category || undefined,
+      };
+
+      const data = await adminProductService.getProducts(
+        params,
+        { signal }
+      );
+
+      setProducts(data.products);
+      setCategories(data.categories);
+      setPagination(data.pagination);
+    } catch (requestError) {
+      if (
+        requestError.code === "ERR_CANCELED" ||
+        signal?.aborted
+      ) {
+        return;
+      }
+
+      setError(
+        requestError.response?.data?.message ||
+          "Unable to load products. Please try again."
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setIsLoading(true);
+    fetchProducts(controller.signal);
+
+    return () => controller.abort();
+  }, [fetchProducts]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setFilters((current) => {
+        if (current.search === searchInput.trim()) {
+          return current;
+        }
+
+        return {
+          ...current,
+          search: searchInput.trim(),
+          page: 1,
+        };
+      });
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
+  const updateFilter = useCallback((name, value) => {
+    setFilters((current) => ({
+      ...current,
+      [name]: value,
+      page: 1,
+    }));
+  }, []);
+
+  const changePage = useCallback((page) => {
+    setFilters((current) => ({
+      ...current,
+      page,
+    }));
+  }, []);
+
+  const refreshProducts = useCallback(() => {
+    setIsLoading(true);
+    fetchProducts();
+  }, [fetchProducts]);
+
+  const toggleProductStatus = useCallback(async (product) => {
+    const productId = product._id;
+
+    try {
+      setActionLoading(productId);
+      setError("");
+
+      if (product.isActive) {
+        await adminProductService.deactivateProduct(productId);
+      } else {
+        await adminProductService.activateProduct(productId);
+      }
+
+      await fetchProducts();
+    } catch (requestError) {
+      setError(
+        requestError.response?.data?.message ||
+          "Unable to update product status. Please try again."
+      );
+    } finally {
+      setActionLoading("");
+    }
+  }, [fetchProducts]);
+
+  return {
+    products,
+    categories,
+    pagination,
+    filters,
+    searchInput,
+    setSearchInput,
+    updateFilter,
+    changePage,
+    refreshProducts,
+    toggleProductStatus,
+    isLoading,
+    actionLoading,
+    error,
+  };
+};
+
+export default useAdminProducts;
+

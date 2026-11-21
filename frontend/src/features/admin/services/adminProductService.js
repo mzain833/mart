@@ -11,6 +11,14 @@ const adminProductService = {
     return response.data.data;
   },
 
+  async getCategories({ signal } = {}) {
+    const response = await apiClient.get("/categories", {
+      signal,
+    });
+
+    return response.data.data.categories;
+  },
+
   async getProductById(productId, { signal } = {}) {
     const response = await apiClient.get(
       `/admin/products/${productId}`,

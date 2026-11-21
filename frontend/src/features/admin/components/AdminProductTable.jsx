@@ -14,9 +14,11 @@ const formatCurrency = (value = 0) =>
     style: "currency",
     currency: "PKR",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(Number(value) || 0);
 
-const getStockStatus = (stock) => {
+const getStockStatus = (value) => {
+  const stock = Math.max(0, Number(value) || 0);
+
   if (stock === 0) {
     return { label: "Out of stock", className: "out" };
   }
@@ -29,15 +31,15 @@ const getStockStatus = (stock) => {
 };
 
 const AdminProductTable = ({
-  products,
+  products = [],
   isLoading,
   actionLoading,
   onToggleStatus,
 }) => {
   if (isLoading && products.length === 0) {
     return (
-      <div className="admin-products__state">
-        <Package size={30} />
+      <div className="admin-products__state" role="status">
+        <LoaderCircle size={28} className="is-spinning" />
         <span>Loading products...</span>
       </div>
     );
@@ -77,11 +79,17 @@ const AdminProductTable = ({
               <tr key={product._id}>
                 <td>
                   <div className="admin-products__product">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      loading="lazy"
-                    />
+                    {product.image ? (
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="admin-products__image-placeholder">
+                        <Package size={19} />
+                      </span>
+                    )}
 
                     <div>
                       <strong>{product.name}</strong>
@@ -91,10 +99,10 @@ const AdminProductTable = ({
                 </td>
 
                 <td className="admin-products__sku">
-                  {product.sku}
+                  {product.sku || "—"}
                 </td>
 
-                <td>{product.category}</td>
+                <td>{product.category || "Uncategorized"}</td>
 
                 <td className="admin-products__price">
                   {formatCurrency(product.price)}
@@ -107,7 +115,7 @@ const AdminProductTable = ({
                     {stock.className === "out" && (
                       <AlertTriangle size={13} />
                     )}
-                    {product.stock} · {stock.label}
+                    {Number(product.stock) || 0} · {stock.label}
                   </span>
                 </td>
 
@@ -128,9 +136,9 @@ const AdminProductTable = ({
                       to={`/admin/products/${product._id}/edit`}
                       className="admin-products__edit"
                       aria-label={`Edit ${product.name}`}
-                      title="Edit product"
                     >
-                      <Edit3 size={17} />
+                      <Edit3 size={15} />
+                      <span>Edit</span>
                     </Link>
 
                     <button
@@ -142,27 +150,22 @@ const AdminProductTable = ({
                       }`}
                       onClick={() => onToggleStatus(product)}
                       disabled={Boolean(actionLoading)}
-                      aria-label={
-                        product.isActive
-                          ? `Deactivate ${product.name}`
-                          : `Activate ${product.name}`
-                      }
-                      title={
-                        product.isActive
-                          ? "Deactivate product"
-                          : "Activate product"
-                      }
+                      aria-busy={isUpdating}
                     >
                       {isUpdating ? (
                         <LoaderCircle
-                          size={17}
+                          size={15}
                           className="is-spinning"
                         />
                       ) : product.isActive ? (
-                        <PowerOff size={17} />
+                        <PowerOff size={15} />
                       ) : (
-                        <Power size={17} />
+                        <Power size={15} />
                       )}
+
+                      <span>
+                        {product.isActive ? "Deactivate" : "Activate"}
+                      </span>
                     </button>
                   </div>
                 </td>

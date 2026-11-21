@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import adminService from "../services/adminService";
 
@@ -8,22 +8,27 @@ const useAdminDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const fetchDashboard = useCallback(async (signal) => {
-    try {
-      setError("");
+  const controllerRef = useRef(null);
 
+  const fetchDashboard = useCallback(async (signal) => {
+    setError("");
+
+    try {
       const data = await adminService.getDashboard({ signal });
 
-      setDashboard(data);
-    } catch (error) {
-      if (error.code === "ERR_CANCELED") {
-        return;
+      if (!signal?.aborted) {
+        setDashboard(data);
       }
-
-      setError(
-        error.response?.data?.message ||
-          "Unable to load dashboard data. Please try again."
-      );
+    } catch (requestError) {
+      if (
+        !signal?.aborted &&
+        requestError.code !== "ERR_CANCELED"
+      ) {
+        setError(
+          requestError.response?.data?.message ||
+            "Unable to load dashboard data. Please try again."
+        );
+      }
     } finally {
       if (!signal?.aborted) {
         setIsLoading(false);
@@ -33,15 +38,24 @@ const useAdminDashboard = () => {
 
   useEffect(() => {
     const controller = new AbortController();
+    controllerRef.current = controller;
 
     fetchDashboard(controller.signal);
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      controllerRef.current = null;
+    };
   }, [fetchDashboard]);
 
   const refreshDashboard = useCallback(() => {
+    controllerRef.current?.abort();
+
+    const controller = new AbortController();
+    controllerRef.current = controller;
+
     setIsLoading(true);
-    fetchDashboard();
+    fetchDashboard(controller.signal);
   }, [fetchDashboard]);
 
   return {

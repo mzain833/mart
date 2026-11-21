@@ -25,6 +25,7 @@ const INITIAL_FORM = {
   slug: "",
   name: "",
   category: "",
+  categoryId: "",
   price: "",
   compareAtPrice: "",
   badge: "",
@@ -73,11 +74,49 @@ const AdminProductForm = () => {
   const [images, setImages] = useState([]);
   const [mainImageId, setMainImageId] = useState(null);
 
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
   const [slugTouched, setSlugTouched] = useState(false);
   const [loading, setLoading] = useState(isEditMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // Load active categories.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadCategories = async () => {
+      try {
+        setCategoriesLoading(true);
+
+        const data = await adminProductService.getCategories({
+          signal: controller.signal,
+        });
+
+        setCategories(Array.isArray(data) ? data : []);
+      } catch (requestError) {
+        if (
+          requestError.code === "ERR_CANCELED" ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        setError(getErrorMessage(requestError));
+      } finally {
+        if (!controller.signal.aborted) {
+          setCategoriesLoading(false);
+        }
+      }
+    };
+
+    loadCategories();
+
+    return () => controller.abort();
+  }, []);
+
+  // Release temporary image previews.
   useEffect(() => {
     return () => {
       objectUrlsRef.current.forEach((url) => {
@@ -88,6 +127,7 @@ const AdminProductForm = () => {
     };
   }, []);
 
+  // Load existing product in edit mode.
   useEffect(() => {
     if (!isEditMode) return undefined;
 
@@ -108,6 +148,7 @@ const AdminProductForm = () => {
           slug: product.slug ?? "",
           name: product.name ?? "",
           category: product.category ?? "",
+          categoryId: product.categoryId ?? "",
           price: String(product.price ?? ""),
           compareAtPrice:
             product.compareAtPrice == null
@@ -184,6 +225,30 @@ const AdminProductForm = () => {
     });
   };
 
+  const handleCategoryChange = (event) => {
+    const categoryId = event.target.value;
+
+    const selectedCategory = categories.find(
+      (category) => category._id === categoryId
+    );
+
+    if (selectedCategory) {
+      setForm((current) => ({
+        ...current,
+        categoryId: selectedCategory._id,
+        category: selectedCategory.name,
+      }));
+
+      return;
+    }
+
+    // Preserve an existing legacy category.
+    setForm((current) => ({
+      ...current,
+      categoryId: "",
+    }));
+  };
+
   const releaseImagePreview = (url) => {
     if (!url || !objectUrlsRef.current.has(url)) return;
 
@@ -194,7 +259,6 @@ const AdminProductForm = () => {
   const handleImageSelection = (event) => {
     const selectedFiles = Array.from(event.target.files || []);
 
-    // Same file ko dobara select karne ki permission.
     event.target.value = "";
 
     if (!selectedFiles.length) return;
@@ -259,10 +323,10 @@ const AdminProductForm = () => {
     });
 
     if (!images.some((image) => !image.isLegacy)) {
-  setMainImageId(newImages[0].id);
-}
+      setMainImageId(newImages[0].id);
+    }
 
-setImages((current) => [...current, ...newImages]);
+    setImages((current) => [...current, ...newImages]);
   };
 
   const handleRemoveImage = (imageId) => {
@@ -292,8 +356,6 @@ setImages((current) => [...current, ...newImages]);
 
     if (!targetImage) return;
 
-    // Legacy URL ko Cloudinary image ke saath primary
-    // banane se backend ka first-image rule conflict karega.
     if (
       targetImage.isLegacy &&
       images.some((image) => !image.isLegacy)
@@ -312,19 +374,19 @@ setImages((current) => [...current, ...newImages]);
 
     setError("");
 
-   const mainImage =
-  images.find((image) => image.id === mainImageId) ??
-  images[0] ??
-  null;
+    const mainImage =
+      images.find((image) => image.id === mainImageId) ??
+      images[0] ??
+      null;
 
-if (!mainImage) {
-  setError("Kam az kam aik product image select karein.");
-  return;
-}
+    if (!mainImage) {
+      setError("Kam az kam aik product image select karein.");
+      return;
+    }
 
-if (mainImage.id !== mainImageId) {
-  setMainImageId(mainImage.id);
-}
+    if (mainImage.id !== mainImageId) {
+      setMainImageId(mainImage.id);
+    }
 
     const payload = {
       ...form,
@@ -344,6 +406,24 @@ if (mainImage.id !== mainImageId) {
       bestSeller: Boolean(form.bestSeller),
       isActive: Boolean(form.isActive),
     };
+
+    const selectedCategory = categories.find(
+      (category) =>
+        category._id === form.categoryId ||
+        category.name === form.category
+    );
+
+    if (selectedCategory) {
+      payload.categoryId = selectedCategory._id;
+      payload.category = selectedCategory.name;
+    } else if (form.categoryId) {
+      setError(
+        "Selected category available nahi hai. Dobara select karein."
+      );
+      return;
+    } else {
+      delete payload.categoryId;
+    }
 
     if (
       !Number.isFinite(payload.price) ||
@@ -573,17 +653,41 @@ if (mainImage.id !== mainImageId) {
 
               <label className="admin-product-form__field">
                 <span>Category *</span>
-                <input
-                  type="text"
-                  value={form.category}
-                  onChange={(event) =>
-                    updateField("category", event.target.value)
+                <select
+                  value={
+                    form.categoryId ||
+                    (form.category ? `legacy:${form.category}` : "")
                   }
-                  minLength={2}
-                  maxLength={80}
+                  onChange={handleCategoryChange}
                   required
-                  placeholder="e.g. Electronics"
-                />
+                  disabled={categoriesLoading || saving}
+                >
+                  <option value="">
+                    {categoriesLoading
+                      ? "Loading categories..."
+                      : "Select a category"}
+                  </option>
+
+                  {categories.map((category) => (
+                    <option
+                      key={category._id}
+                      value={category._id}
+                    >
+                      {category.name}
+                    </option>
+                  ))}
+
+                  {form.category &&
+                    !categories.some(
+                      (category) =>
+                        category._id === form.categoryId ||
+                        category.name === form.category
+                    ) && (
+                      <option value={`legacy:${form.category}`}>
+                        {form.category} (Legacy)
+                      </option>
+                    )}
+                </select>
               </label>
 
               <label className="admin-product-form__field">
@@ -854,7 +958,7 @@ if (mainImage.id !== mainImageId) {
             <button
               type="submit"
               className="admin-product-form__submit"
-              disabled={saving}
+              disabled={saving || categoriesLoading}
             >
               {saving ? (
                 <LoaderCircle size={17} className="is-spinning" />

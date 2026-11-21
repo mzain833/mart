@@ -1,0 +1,2013 @@
+﻿
+========== src/services/admin/admin.service.js ==========
+
+import mongoose from "mongoose";
+
+import Order from "../../models/order/Order.model.js";
+import Product from "../../models/product/Product.model.js";
+import User from "../../models/user/User.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const LOW_STOCK_THRESHOLD = 5;
+const RECENT_ORDERS_LIMIT = 5;
+const LOW_STOCK_LIMIT = 5;
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  price_asc: { price: 1, _id: 1 },
+  price_desc: { price: -1, _id: -1 },
+  name_asc: { name: 1, _id: 1 },
+  name_desc: { name: -1, _id: -1 },
+});
+
+const ACTIVE_ORDER_STATUSES = [
+  "placed",
+  "confirmed",
+  "processing",
+  "shipped",
+];
+
+const throwBadRequest = (message) => {
+  throw new ApiError(HTTP_STATUS.BAD_REQUEST, message);
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parseInteger = (value, field, min, max) => {
+  if (
+    typeof value !== "string" ||
+    !/^\d+$/.test(value)
+  ) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return parsed;
+};
+
+const normalizeAdminProductQuery = (query = {}) => {
+  const allowedFields = new Set([
+    "search",
+    "category",
+    "status",
+    "stockStatus",
+    "sort",
+    "page",
+    "limit",
+  ]);
+
+  for (const field of Object.keys(query)) {
+    if (!allowedFields.has(field)) {
+      throwBadRequest(`Unsupported query parameter: ${field}.`);
+    }
+  }
+
+  if (
+    query.search !== undefined &&
+    typeof query.search !== "string"
+  ) {
+    throwBadRequest("Search must be a valid string.");
+  }
+
+  if (
+    query.category !== undefined &&
+    typeof query.category !== "string"
+  ) {
+    throwBadRequest("Category must be a valid string.");
+  }
+
+  const search = query.search?.trim();
+  const category = query.category?.trim();
+
+  if (search && search.length > MAX_SEARCH_LENGTH) {
+    throwBadRequest("Search query is too long.");
+  }
+
+  if (query.category !== undefined && !category) {
+    throwBadRequest("Category cannot be empty.");
+  }
+
+  const status = query.status ?? "all";
+
+  if (!["all", "active", "inactive"].includes(status)) {
+    throwBadRequest("Invalid product status filter.");
+  }
+
+  const stockStatus = query.stockStatus ?? "all";
+
+  if (
+    !["all", "in_stock", "low_stock", "out_of_stock"].includes(
+      stockStatus
+    )
+  ) {
+    throwBadRequest("Invalid stock status filter.");
+  }
+
+  const sort = query.sort ?? "newest";
+
+  if (
+    typeof sort !== "string" ||
+    !Object.hasOwn(SORT_OPTIONS, sort)
+  ) {
+    throwBadRequest("Invalid product sorting option.");
+  }
+
+  const page =
+    query.page === undefined
+      ? DEFAULT_PAGE
+      : parseInteger(query.page, "Page", 1, 1000000);
+
+  const limit =
+    query.limit === undefined
+      ? DEFAULT_LIMIT
+      : parseInteger(query.limit, "Limit", 1, MAX_LIMIT);
+
+  return {
+    search,
+    category,
+    status,
+    stockStatus,
+    sort,
+    page,
+    limit,
+  };
+};
+
+const getDashboardStats = async () => {
+  const [
+    totalOrders,
+    totalProducts,
+    totalCustomers,
+    activeCustomers,
+    inactiveCustomers,
+    activeOrders,
+    totalCancelledOrders,
+    revenueResult,
+    orderValueResult,
+    cancelledValueResult,
+    lowStockCount,
+    recentOrders,
+    lowStockProducts,
+  ] = await Promise.all([
+    Order.countDocuments(),
+
+    Product.countDocuments({ isActive: true }),
+
+    User.countDocuments({ role: "customer" }),
+
+    User.countDocuments({
+      role: "customer",
+      isActive: true,
+    }),
+
+    User.countDocuments({
+      role: "customer",
+      isActive: false,
+    }),
+
+    Order.countDocuments({
+      status: {
+        $in: ["placed", "confirmed", "processing", "shipped"],
+      },
+    }),
+
+    Order.countDocuments({ status: "cancelled" }),
+
+    Order.aggregate([
+      {
+        $match: {
+          paymentStatus: "paid",
+          status: { $ne: "cancelled" },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$total" },
+        },
+      },
+    ]),
+
+    Order.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$total" },
+        },
+      },
+    ]),
+
+    Order.aggregate([
+      {
+        $match: { status: "cancelled" },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$total" },
+        },
+      },
+    ]),
+
+    Product.countDocuments({
+      isActive: true,
+      stock: { $lte: 5 },
+    }),
+
+    Order.find()
+      .select(
+        "orderNumber customer.fullName total status paymentStatus createdAt"
+      )
+      .sort({ createdAt: -1 })
+      .limit(8)
+      .lean(),
+
+    Product.find({
+      isActive: true,
+      stock: { $lte: 5 },
+    })
+      .select("name sku price stock image category")
+      .sort({ stock: 1 })
+      .limit(8)
+      .lean(),
+  ]);
+
+  return {
+    stats: {
+      totalRevenue: revenueResult[0]?.total ?? 0,
+      totalOrderValue: orderValueResult[0]?.total ?? 0,
+      cancelledOrderValue: cancelledValueResult[0]?.total ?? 0,
+      totalOrders,
+      totalCancelledOrders,
+      activeOrders,
+      totalProducts,
+      totalCustomers,
+      activeCustomers,
+      inactiveCustomers,
+      lowStockCount,
+    },
+    recentOrders,
+    lowStockProducts,
+  };
+};
+
+const getAdminProducts = async (query = {}) => {
+  const {
+    search,
+    category,
+    status,
+    stockStatus,
+    sort,
+    page,
+    limit,
+  } = normalizeAdminProductQuery(query);
+
+  const filter = {};
+
+  if (status === "active") filter.isActive = true;
+  if (status === "inactive") filter.isActive = false;
+
+  if (search) {
+    const searchRegex = new RegExp(escapeRegex(search), "i");
+
+    filter.$or = [
+      { name: searchRegex },
+      { sku: searchRegex },
+    ];
+  }
+
+  if (category) {
+    filter.category = category;
+  }
+
+  if (stockStatus === "in_stock") {
+    filter.stock = { $gt: LOW_STOCK_THRESHOLD };
+  }
+
+  if (stockStatus === "low_stock") {
+    filter.stock = { $gt: 0, $lte: LOW_STOCK_THRESHOLD };
+  }
+
+  if (stockStatus === "out_of_stock") {
+    filter.stock = 0;
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [products, total, categories] = await Promise.all([
+    Product.find(filter)
+      .sort(SORT_OPTIONS[sort])
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    Product.countDocuments(filter),
+
+    Product.distinct("category"),
+  ]);
+
+  return {
+    products,
+    categories: categories.sort((a, b) => a.localeCompare(b)),
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const getAdminProductById = async (productId) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findById(productId).lean();
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
+  }
+
+  return product;
+};
+
+const updateProductStatus = async (productId, isActive) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findOneAndUpdate(
+    { _id: productId, isActive: !isActive },
+    { $set: { isActive } },
+    { new: true, runValidators: true }
+  ).lean();
+
+  if (!product) {
+    const exists = await Product.exists({ _id: productId });
+
+    if (!exists) {
+      throw new ApiError(
+        HTTP_STATUS.NOT_FOUND,
+        "Product not found."
+      );
+    }
+
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      `Product is already ${isActive ? "active" : "inactive"}.`
+    );
+  }
+
+  return product;
+};
+
+const activateProduct = (productId) =>
+  updateProductStatus(productId, true);
+
+const deactivateProduct = (productId) =>
+  updateProductStatus(productId, false);
+
+const adminService = {
+  getDashboardStats,
+  getAdminProducts,
+  getAdminProductById,
+  activateProduct,
+  deactivateProduct,
+};
+
+export default adminService;
+
+
+========== src/services/admin/admin-customer.service.js ==========
+
+import mongoose from "mongoose";
+
+import User from "../../models/user/User.model.js";
+import Order from "../../models/order/Order.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+const RECENT_ORDERS_LIMIT = 10;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  name_asc: { fullName: 1, _id: 1 },
+  name_desc: { fullName: -1, _id: -1 },
+});
+
+const throwBadRequest = (message) => {
+  throw new ApiError(HTTP_STATUS.BAD_REQUEST, message);
+};
+
+const throwNotFound = (message) => {
+  throw new ApiError(HTTP_STATUS.NOT_FOUND, message);
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parseInteger = (value, field, min, max) => {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return parsed;
+};
+
+const normalizeQuery = (query = {}) => {
+  const allowedFields = new Set([
+    "search",
+    "status",
+    "sort",
+    "page",
+    "limit",
+  ]);
+
+  for (const field of Object.keys(query)) {
+    if (!allowedFields.has(field)) {
+      throwBadRequest(`Unsupported query parameter: ${field}.`);
+    }
+  }
+
+  if (
+    query.search !== undefined &&
+    typeof query.search !== "string"
+  ) {
+    throwBadRequest("Search must be a valid string.");
+  }
+
+  const search = query.search?.trim() || "";
+
+  if (search.length > MAX_SEARCH_LENGTH) {
+    throwBadRequest("Search query is too long.");
+  }
+
+  const status = query.status ?? "all";
+
+  if (!["all", "active", "inactive"].includes(status)) {
+    throwBadRequest("Invalid customer status filter.");
+  }
+
+  const sort = query.sort ?? "newest";
+
+  if (
+    typeof sort !== "string" ||
+    !Object.hasOwn(SORT_OPTIONS, sort)
+  ) {
+    throwBadRequest("Invalid customer sorting option.");
+  }
+
+  const page =
+    query.page === undefined
+      ? DEFAULT_PAGE
+      : parseInteger(query.page, "Page", 1, 1000000);
+
+  const limit =
+    query.limit === undefined
+      ? DEFAULT_LIMIT
+      : parseInteger(query.limit, "Limit", 1, MAX_LIMIT);
+
+  return { search, status, sort, page, limit };
+};
+
+const getAdminCustomers = async (query = {}) => {
+  const { search, status, sort, page, limit } = normalizeQuery(query);
+
+  const filter = { role: "customer" };
+
+  if (status === "active") filter.isActive = true;
+  if (status === "inactive") filter.isActive = false;
+
+  if (search) {
+    const searchRegex = new RegExp(escapeRegex(search), "i");
+
+    filter.$or = [
+      { fullName: searchRegex },
+      { email: searchRegex },
+      { phone: searchRegex },
+    ];
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [customers, total] = await Promise.all([
+    User.find(filter)
+      .select("_id fullName email phone role isActive createdAt updatedAt")
+      .sort(SORT_OPTIONS[sort])
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    User.countDocuments(filter),
+  ]);
+
+  const customerIds = customers.map((customer) => customer._id);
+
+  const orderStats = customerIds.length
+    ? await Order.aggregate([
+        {
+          $match: {
+            user: { $in: customerIds },
+          },
+        },
+        {
+          $group: {
+            _id: "$user",
+            totalOrders: { $sum: 1 },
+            deliveredOrders: {
+              $sum: {
+                $cond: [{ $eq: ["$status", "delivered"] }, 1, 0],
+              },
+            },
+            totalOrderValue: {
+              $sum: {
+                $cond: [
+                  { $ne: ["$status", "cancelled"] },
+                  "$total",
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ])
+    : [];
+
+  const statsMap = new Map(
+    orderStats.map((item) => [item._id.toString(), item])
+  );
+
+  const result = customers.map((customer) => {
+    const stats = statsMap.get(customer._id.toString());
+
+    return {
+      ...customer,
+      orderStats: {
+        totalOrders: stats?.totalOrders ?? 0,
+        deliveredOrders: stats?.deliveredOrders ?? 0,
+        totalOrderValue: stats?.totalOrderValue ?? 0,
+      },
+    };
+  });
+
+  return {
+    customers: result,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const getAdminCustomerById = async (customerId) => {
+  if (!mongoose.isValidObjectId(customerId)) {
+    throwBadRequest("Invalid customer ID.");
+  }
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: "customer",
+  })
+    .select("_id fullName email phone role isActive createdAt updatedAt")
+    .lean();
+
+  if (!customer) {
+    throwNotFound("Customer not found.");
+  }
+
+  const [summaryResult, recentOrders] = await Promise.all([
+    Order.aggregate([
+      {
+        $match: {
+          user: customer._id,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          deliveredOrders: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "delivered"] }, 1, 0],
+            },
+          },
+          cancelledOrders: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0],
+            },
+          },
+          activeOrders: {
+            $sum: {
+              $cond: [
+                {
+                  $in: [
+                    "$status",
+                    ["placed", "confirmed", "processing", "shipped"],
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          totalOrderValue: {
+            $sum: {
+              $cond: [
+                { $ne: ["$status", "cancelled"] },
+                "$total",
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]),
+
+    Order.find({ user: customer._id })
+      .select(
+        "orderNumber status paymentStatus paymentMethod subtotal total items createdAt"
+      )
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(RECENT_ORDERS_LIMIT)
+      .lean(),
+  ]);
+
+  const summary = summaryResult[0] || {
+    totalOrders: 0,
+    deliveredOrders: 0,
+    cancelledOrders: 0,
+    activeOrders: 0,
+    totalOrderValue: 0,
+  };
+
+  return {
+    customer,
+    summary,
+    recentOrders,
+  };
+};
+
+const updateCustomerStatus = async (customerId, isActive) => {
+  if (!mongoose.isValidObjectId(customerId)) {
+    throwBadRequest("Invalid customer ID.");
+  }
+
+  if (typeof isActive !== "boolean") {
+    throwBadRequest("Customer status must be a boolean.");
+  }
+
+  const customer = await User.findOneAndUpdate(
+    {
+      _id: customerId,
+      role: "customer",
+      isActive: !isActive,
+    },
+    {
+      $set: { isActive },
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
+  )
+    .select("_id fullName email phone role isActive createdAt updatedAt")
+    .lean();
+
+  if (customer) return customer;
+
+  const exists = await User.exists({
+    _id: customerId,
+    role: "customer",
+  });
+
+  if (!exists) {
+    throwNotFound("Customer not found.");
+  }
+
+  throw new ApiError(
+    HTTP_STATUS.CONFLICT,
+    `Customer is already ${isActive ? "active" : "inactive"}.`
+  );
+};
+
+const adminCustomerService = {
+  getAdminCustomers,
+  getAdminCustomerById,
+  updateCustomerStatus,
+};
+
+export default adminCustomerService;
+
+
+========== src/services/admin/admin-order.service.js ==========
+
+import mongoose from "mongoose";
+
+import Order from "../../models/order/Order.model.js";
+import Product from "../../models/product/Product.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+
+const ORDER_STATUSES = Object.freeze([
+  "placed",
+  "confirmed",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
+]);
+
+const PAYMENT_STATUSES = Object.freeze([
+  "pending",
+  "paid",
+  "failed",
+  "refunded",
+]);
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  total_asc: { total: 1, _id: 1 },
+  total_desc: { total: -1, _id: -1 },
+});
+
+const STATUS_TRANSITIONS = Object.freeze({
+  placed: ["confirmed"],
+  confirmed: ["processing"],
+  processing: ["shipped"],
+  shipped: ["delivered"],
+  delivered: [],
+  cancelled: [],
+});
+
+const CANCELLABLE_STATUSES = Object.freeze([
+  "placed",
+  "confirmed",
+  "processing",
+]);
+
+const throwBadRequest = (message) => {
+  throw new ApiError(HTTP_STATUS.BAD_REQUEST, message);
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const validateOrderId = (orderId) => {
+  if (!mongoose.isValidObjectId(orderId)) {
+    throwBadRequest("Invalid order ID.");
+  }
+};
+
+const parseInteger = (value, field, min, max) => {
+  if (
+    typeof value !== "string" ||
+    !/^\d+$/.test(value)
+  ) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  const parsed = Number(value);
+
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < min ||
+    parsed > max
+  ) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return parsed;
+};
+
+const parseDateFilter = (value, field, endOfDay = false) => {
+  if (typeof value !== "string" || !value.trim()) {
+    throwBadRequest(`${field} must be a valid date.`);
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    throwBadRequest(`${field} must be a valid date.`);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    date.setUTCHours(
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0
+    );
+  }
+
+  return date;
+};
+
+const normalizeListQuery = (query = {}) => {
+  const allowedFields = new Set([
+    "search",
+    "status",
+    "paymentStatus",
+    "paymentMethod",
+    "from",
+    "to",
+    "sort",
+    "page",
+    "limit",
+  ]);
+
+  for (const field of Object.keys(query)) {
+    if (!allowedFields.has(field)) {
+      throwBadRequest(`Unsupported query parameter: ${field}.`);
+    }
+  }
+
+  if (
+    query.search !== undefined &&
+    typeof query.search !== "string"
+  ) {
+    throwBadRequest("Search must be a valid string.");
+  }
+
+  const search = query.search?.trim();
+
+  if (search && search.length > MAX_SEARCH_LENGTH) {
+    throwBadRequest("Search query is too long.");
+  }
+
+  const status = query.status ?? "all";
+
+  if (
+    status !== "all" &&
+    !ORDER_STATUSES.includes(status)
+  ) {
+    throwBadRequest("Invalid order status filter.");
+  }
+
+  const paymentStatus = query.paymentStatus ?? "all";
+
+  if (
+    paymentStatus !== "all" &&
+    !PAYMENT_STATUSES.includes(paymentStatus)
+  ) {
+    throwBadRequest("Invalid payment status filter.");
+  }
+
+  const paymentMethod = query.paymentMethod ?? "all";
+
+  if (
+    paymentMethod !== "all" &&
+    paymentMethod !== "cod"
+  ) {
+    throwBadRequest("Invalid payment method filter.");
+  }
+
+  const sort = query.sort ?? "newest";
+
+  if (
+    typeof sort !== "string" ||
+    !Object.hasOwn(SORT_OPTIONS, sort)
+  ) {
+    throwBadRequest("Invalid order sorting option.");
+  }
+
+  const page =
+    query.page === undefined
+      ? DEFAULT_PAGE
+      : parseInteger(query.page, "Page", 1, 1000000);
+
+  const limit =
+    query.limit === undefined
+      ? DEFAULT_LIMIT
+      : parseInteger(query.limit, "Limit", 1, MAX_LIMIT);
+
+  const from =
+    query.from === undefined
+      ? null
+      : parseDateFilter(query.from, "From date");
+
+  const to =
+    query.to === undefined
+      ? null
+      : parseDateFilter(query.to, "To date", true);
+
+  if (from && to && from > to) {
+    throwBadRequest("From date cannot be later than to date.");
+  }
+
+  return {
+    search,
+    status,
+    paymentStatus,
+    paymentMethod,
+    from,
+    to,
+    sort,
+    page,
+    limit,
+  };
+};
+
+const getAdminOrders = async (query = {}) => {
+  const {
+    search,
+    status,
+    paymentStatus,
+    paymentMethod,
+    from,
+    to,
+    sort,
+    page,
+    limit,
+  } = normalizeListQuery(query);
+
+  const filter = {};
+
+  if (status !== "all") {
+    filter.status = status;
+  }
+
+  if (paymentStatus !== "all") {
+    filter.paymentStatus = paymentStatus;
+  }
+
+  if (paymentMethod !== "all") {
+    filter.paymentMethod = paymentMethod;
+  }
+
+  if (search) {
+    const regex = new RegExp(escapeRegex(search), "i");
+
+    filter.$or = [
+      { orderNumber: regex },
+      { "customer.fullName": regex },
+      { "customer.email": regex },
+      { "customer.phone": regex },
+    ];
+  }
+
+  if (from || to) {
+    filter.createdAt = {};
+
+    if (from) filter.createdAt.$gte = from;
+    if (to) filter.createdAt.$lte = to;
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [orders, total] = await Promise.all([
+    Order.find(filter)
+      .sort(SORT_OPTIONS[sort])
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    Order.countDocuments(filter),
+  ]);
+
+  return {
+    orders,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const getAdminOrderById = async (orderId) => {
+  validateOrderId(orderId);
+
+  const order = await Order.findById(orderId).lean();
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found."
+    );
+  }
+
+  return order;
+};
+
+const updateAdminOrderStatus = async (
+  orderId,
+  status,
+  note = ""
+) => {
+  validateOrderId(orderId);
+
+  if (!ORDER_STATUSES.includes(status) || status === "cancelled") {
+    throwBadRequest("Invalid order status.");
+  }
+
+  const normalizedNote = String(note || "").trim();
+
+  if (normalizedNote.length > 500) {
+    throwBadRequest("Status note cannot exceed 500 characters.");
+  }
+
+  const order = await Order.findById(orderId).select("status");
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found."
+    );
+  }
+
+  const allowedNextStatuses = STATUS_TRANSITIONS[order.status] || [];
+
+  if (!allowedNextStatuses.includes(status)) {
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      `Order cannot move from ${order.status} to ${status}.`
+    );
+  }
+
+  const updatedOrder = await Order.findOneAndUpdate(
+    {
+      _id: orderId,
+      status: order.status,
+    },
+    {
+      $set: { status },
+      $push: {
+        statusHistory: {
+          status,
+          timestamp: new Date(),
+          note: normalizedNote || `Order status updated to ${status}.`,
+        },
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
+  ).lean();
+
+  if (!updatedOrder) {
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      "Order was updated by another request. Please refresh and try again."
+    );
+  }
+
+  return updatedOrder;
+};
+
+const cancelAdminOrder = async (orderId, reason) => {
+  validateOrderId(orderId);
+
+  const normalizedReason = String(reason || "").trim();
+
+  if (
+    normalizedReason.length < 5 ||
+    normalizedReason.length > 500
+  ) {
+    throwBadRequest(
+      "Cancellation reason must contain 5 to 500 characters."
+    );
+  }
+
+  const session = await mongoose.startSession();
+
+  let cancelledOrder;
+
+  try {
+    await session.withTransaction(async () => {
+      const order = await Order.findById(orderId).session(session);
+
+      if (!order) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "Order not found."
+        );
+      }
+
+      if (!CANCELLABLE_STATUSES.includes(order.status)) {
+        throw new ApiError(
+          HTTP_STATUS.CONFLICT,
+          "This order is no longer eligible for cancellation."
+        );
+      }
+
+      for (const item of order.items) {
+        const stockUpdate = await Product.updateOne(
+          { _id: item.product.productId },
+          { $inc: { stock: item.quantity } },
+          { session }
+        );
+
+        if (stockUpdate.matchedCount !== 1) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            `Unable to restore inventory for ${item.product.name}.`
+          );
+        }
+      }
+
+      const updatedOrder = await Order.findOneAndUpdate(
+        {
+          _id: orderId,
+          status: order.status,
+        },
+        {
+          $set: {
+            status: "cancelled",
+            cancellationReason: normalizedReason,
+          },
+          $push: {
+            statusHistory: {
+              status: "cancelled",
+              timestamp: new Date(),
+              note: normalizedReason,
+            },
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+          session,
+        }
+      );
+
+      if (!updatedOrder) {
+        throw new ApiError(
+          HTTP_STATUS.CONFLICT,
+          "Order status changed. Please refresh and try again."
+        );
+      }
+
+      cancelledOrder = updatedOrder;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return cancelledOrder.toObject();
+};
+
+const adminOrderService = {
+  getAdminOrders,
+  getAdminOrderById,
+  updateAdminOrderStatus,
+  cancelAdminOrder,
+};
+
+export default adminOrderService;
+
+
+========== src/services/product/product.service.js ==========
+
+import mongoose from "mongoose";
+
+import Product from "../../models/product/Product.model.js";
+import Category from "../../models/category/Category.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+import imageService from "./image.service.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  price_asc: { price: 1, _id: 1 },
+  price_desc: { price: -1, _id: 1 },
+  rating: { rating: -1, _id: -1 },
+  popular: { bestSeller: -1, reviewCount: -1, _id: -1 },
+});
+
+const throwBadRequest = (message) => {
+  throw new ApiError(HTTP_STATUS.BAD_REQUEST, message);
+};
+
+const parseInteger = (value, field, { min, max }) => {
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throwBadRequest(
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return parsed;
+};
+
+const parsePrice = (value, field) => {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throwBadRequest(
+      `${field} must be a valid non-negative number.`
+    );
+  }
+
+  return parsed;
+};
+
+const parseBoolean = (value, field) => {
+  if (value === "true" || value === true) return true;
+  if (value === "false" || value === false) return false;
+
+  throwBadRequest(`${field} must be true or false.`);
+};
+
+const handleDatabaseError = (error) => {
+  if (error?.code === 11000) {
+    const duplicateField = Object.keys(error.keyPattern || {})[0];
+
+    const messages = {
+      sku: "A product with this SKU already exists.",
+      slug: "A product with this slug already exists.",
+    };
+
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      messages[duplicateField] ||
+        "A product with these details already exists."
+    );
+  }
+
+  throw error;
+};
+
+// Resolve a category while preserving legacy string compatibility.
+const resolveCategory = async ({ categoryId, category }) => {
+  if (categoryId !== undefined) {
+    if (!mongoose.isValidObjectId(categoryId)) {
+      throwBadRequest("Invalid category ID.");
+    }
+
+    const categoryDocument = await Category.findOne({
+      _id: categoryId,
+      isActive: true,
+    }).select("_id name");
+
+    if (!categoryDocument) {
+      throw new ApiError(
+        HTTP_STATUS.NOT_FOUND,
+        "Selected category was not found or is inactive."
+      );
+    }
+
+    return {
+      categoryId: categoryDocument._id,
+      category: categoryDocument.name,
+    };
+  }
+
+  if (category !== undefined) {
+    const categoryDocument = await Category.findOne({
+      name: category,
+      isActive: true,
+    }).select("_id name");
+
+    if (categoryDocument) {
+      return {
+        categoryId: categoryDocument._id,
+        category: categoryDocument.name,
+      };
+    }
+
+    // Existing legacy products and clients remain compatible.
+    return {
+      category,
+      categoryId: null,
+    };
+  }
+
+  return {};
+};
+
+const normalizeProductQuery = (query = {}) => {
+  const allowedFields = new Set([
+    "search",
+    "category",
+    "sort",
+    "page",
+    "limit",
+    "isNewArrival",
+    "bestSeller",
+    "inStock",
+    "minPrice",
+    "maxPrice",
+  ]);
+
+  for (const field of Object.keys(query)) {
+    if (!allowedFields.has(field)) {
+      throwBadRequest(`Unsupported query parameter: ${field}.`);
+    }
+  }
+
+  if (query.search !== undefined && typeof query.search !== "string") {
+    throwBadRequest("Search must be a valid string.");
+  }
+
+  if (query.category !== undefined && typeof query.category !== "string") {
+    throwBadRequest("Category must be a valid string.");
+  }
+
+  const search = query.search?.trim();
+  const category = query.category?.trim();
+
+  if (search && search.length > MAX_SEARCH_LENGTH) {
+    throwBadRequest("Search query is too long.");
+  }
+
+  if (query.category !== undefined && !category) {
+    throwBadRequest("Category cannot be empty.");
+  }
+
+  const sort = query.sort || "newest";
+
+  if (
+    typeof sort !== "string" ||
+    !Object.hasOwn(SORT_OPTIONS, sort)
+  ) {
+    throwBadRequest("Invalid product sorting option.");
+  }
+
+  const page =
+    query.page === undefined
+      ? DEFAULT_PAGE
+      : parseInteger(query.page, "Page", {
+          min: 1,
+          max: 1000000,
+        });
+
+  const limit =
+    query.limit === undefined
+      ? DEFAULT_LIMIT
+      : parseInteger(query.limit, "Limit", {
+          min: 1,
+          max: MAX_LIMIT,
+        });
+
+  const minPrice =
+    query.minPrice === undefined
+      ? undefined
+      : parsePrice(query.minPrice, "Minimum price");
+
+  const maxPrice =
+    query.maxPrice === undefined
+      ? undefined
+      : parsePrice(query.maxPrice, "Maximum price");
+
+  if (
+    minPrice !== undefined &&
+    maxPrice !== undefined &&
+    minPrice > maxPrice
+  ) {
+    throwBadRequest(
+      "Minimum price cannot exceed maximum price."
+    );
+  }
+
+  return {
+    search,
+    category,
+    sort,
+    page,
+    limit,
+    isNewArrival:
+      query.isNewArrival === undefined
+        ? undefined
+        : parseBoolean(query.isNewArrival, "isNewArrival"),
+    bestSeller:
+      query.bestSeller === undefined
+        ? undefined
+        : parseBoolean(query.bestSeller, "bestSeller"),
+    inStock:
+      query.inStock === undefined
+        ? undefined
+        : parseBoolean(query.inStock, "inStock"),
+    minPrice,
+    maxPrice,
+  };
+};
+
+const getProducts = async (query) => {
+  const filters = normalizeProductQuery(query);
+
+  const {
+    search,
+    category,
+    sort,
+    page,
+    limit,
+    isNewArrival,
+    bestSeller,
+    inStock,
+    minPrice,
+    maxPrice,
+  } = filters;
+
+  const filter = { isActive: true };
+
+  if (search) {
+    filter.$text = { $search: search };
+  }
+
+  if (category) {
+    let categoryDocument = null;
+
+    if (mongoose.isValidObjectId(category)) {
+      categoryDocument = await Category.findOne({
+        _id: category,
+        isActive: true,
+      }).select("_id name");
+    } else {
+      categoryDocument = await Category.findOne({
+        slug: category,
+        isActive: true,
+      }).select("_id name");
+    }
+
+    if (categoryDocument) {
+      filter.$or = [
+        { categoryId: categoryDocument._id },
+        {
+          category: categoryDocument.name,
+          categoryId: null,
+        },
+      ];
+    } else {
+      // Backward compatibility for legacy category-name filters.
+      filter.category = category;
+    }
+  }
+
+  if (isNewArrival !== undefined) {
+    filter.isNewArrival = isNewArrival;
+  }
+
+  if (bestSeller !== undefined) {
+    filter.bestSeller = bestSeller;
+  }
+
+  if (inStock === true) filter.stock = { $gt: 0 };
+  if (inStock === false) filter.stock = 0;
+
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    filter.price = {};
+
+    if (minPrice !== undefined) {
+      filter.price.$gte = minPrice;
+    }
+
+    if (maxPrice !== undefined) {
+      filter.price.$lte = maxPrice;
+    }
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [products, total] = await Promise.all([
+    Product.find(filter)
+      .sort(SORT_OPTIONS[sort])
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    Product.countDocuments(filter),
+  ]);
+
+  return {
+    products,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const getProductBySlug = async (slug) => {
+  const product = await Product.findOne({
+    slug,
+    isActive: true,
+  }).lean();
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
+  }
+
+  return product;
+};
+
+const getCategories = async () =>
+  Product.distinct("category", { isActive: true });
+
+const createProduct = async (values) => {
+  try {
+    const categoryValues = await resolveCategory(values);
+
+    return await Product.create({
+      ...values,
+      ...categoryValues,
+    });
+  } catch (error) {
+    handleDatabaseError(error);
+  }
+};
+
+const updateProduct = async (productId, values) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findById(productId);
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
+  }
+
+  const previousImages = (product.images || []).map((image) => ({
+    url: image.url,
+    publicId: image.publicId,
+  }));
+
+  const updatedPrice =
+    values.price !== undefined ? values.price : product.price;
+
+  const updatedCompareAtPrice =
+    values.compareAtPrice !== undefined
+      ? values.compareAtPrice
+      : product.compareAtPrice;
+
+  if (
+    updatedCompareAtPrice !== null &&
+    updatedCompareAtPrice !== undefined &&
+    updatedCompareAtPrice <= updatedPrice
+  ) {
+    throwBadRequest(
+      "Compare-at price must be greater than the selling price."
+    );
+  }
+
+  const updateValues = { ...values };
+
+  if (
+    values.categoryId !== undefined ||
+    values.category !== undefined
+  ) {
+    const categoryValues = await resolveCategory(values);
+    Object.assign(updateValues, categoryValues);
+  }
+
+  if (updateValues.images?.length > 0) {
+    updateValues.image = updateValues.images[0].url;
+  }
+
+  try {
+    Object.assign(product, updateValues);
+
+    await product.save();
+
+    if (values.images !== undefined) {
+      const currentPublicIds = new Set(
+        (product.images || []).map((image) => image.publicId)
+      );
+
+      const removedImages = previousImages.filter(
+        (image) => !currentPublicIds.has(image.publicId)
+      );
+
+      if (removedImages.length > 0) {
+        await imageService.deleteProductImages(removedImages);
+      }
+    }
+
+    return product;
+  } catch (error) {
+    handleDatabaseError(error);
+  }
+};
+
+const deleteProduct = async (productId) => {
+  if (!mongoose.isValidObjectId(productId)) {
+    throwBadRequest("Invalid product ID.");
+  }
+
+  const product = await Product.findOneAndUpdate(
+    { _id: productId, isActive: true },
+    { $set: { isActive: false } },
+    { new: true, runValidators: true }
+  );
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
+  }
+
+  return product;
+};
+
+const productService = {
+  getProducts,
+  getProductBySlug,
+  getCategories,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+};
+
+export default productService;
+
+
+========== src/services/category/category.service.js ==========
+
+import mongoose from "mongoose";
+
+import Category from "../../models/category/Category.model.js";
+import Product from "../../models/product/Product.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1 },
+  oldest: { createdAt: 1 },
+  name_asc: { name: 1 },
+  name_desc: { name: -1 },
+});
+
+const createSlug = (value) =>
+  value
+    .toLowerCase()
+    .trim()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parsePagination = (query = {}) => {
+  const page = Math.max(
+    DEFAULT_PAGE,
+    Number.parseInt(query.page, 10) || DEFAULT_PAGE
+  );
+
+  const limit = Math.min(
+    MAX_LIMIT,
+    Math.max(1, Number.parseInt(query.limit, 10) || DEFAULT_LIMIT)
+  );
+
+  return { page, limit, skip: (page - 1) * limit };
+};
+
+const generateUniqueSlug = async (value, excludeId = null) => {
+  const baseSlug = createSlug(value);
+
+  if (!baseSlug) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "A valid category name is required."
+    );
+  }
+
+  let slug = baseSlug;
+  let counter = 1;
+
+  while (
+    await Category.exists({
+      slug,
+      ...(excludeId && { _id: { $ne: excludeId } }),
+    })
+  ) {
+    counter += 1;
+    slug = `${baseSlug}-${counter}`;
+  }
+
+  return slug;
+};
+
+const handleDuplicateError = (error) => {
+  if (error?.code === 11000) {
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      "A category with this slug already exists."
+    );
+  }
+
+  throw error;
+};
+
+const getPublicCategories = async () =>
+  Category.find({ isActive: true })
+    .select("name slug description image")
+    .sort({ name: 1 })
+    .lean();
+
+const getCategoryBySlug = async (slug) => {
+  const category = await Category.findOne({
+    slug,
+    isActive: true,
+  }).lean();
+
+  if (!category) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Category not found."
+    );
+  }
+
+  return category;
+};
+
+const getAdminCategories = async (query = {}) => {
+  const { page, limit, skip } = parsePagination(query);
+
+  const filter = {};
+
+  if (query.search?.trim()) {
+    const search = escapeRegex(query.search.trim().slice(0, 80));
+
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { slug: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (query.status === "active") {
+    filter.isActive = true;
+  } else if (query.status === "inactive") {
+    filter.isActive = false;
+  }
+
+  const sort = SORT_OPTIONS[query.sort] || SORT_OPTIONS.newest;
+
+  const [categories, total] = await Promise.all([
+    Category.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    Category.countDocuments(filter),
+  ]);
+
+  return {
+    categories,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const createCategory = async (payload) => {
+  try {
+    const slug = payload.slug
+      ? createSlug(payload.slug)
+      : await generateUniqueSlug(payload.name);
+
+    if (!slug) {
+      throw new ApiError(
+        HTTP_STATUS.BAD_REQUEST,
+        "A valid category slug is required."
+      );
+    }
+
+    return await Category.create({
+      ...payload,
+      slug,
+    });
+  } catch (error) {
+    handleDuplicateError(error);
+  }
+};
+
+const updateCategory = async (categoryId, payload) => {
+  if (!mongoose.isValidObjectId(categoryId)) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid category ID."
+    );
+  }
+
+  const category = await Category.findById(categoryId);
+
+  if (!category) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Category not found."
+    );
+  }
+
+  if (payload.isActive === false && category.isActive) {
+    const assignedProducts = await Product.countDocuments({
+      category: category.name,
+      isActive: true,
+    });
+
+    if (assignedProducts > 0) {
+      throw new ApiError(
+        HTTP_STATUS.CONFLICT,
+        "This category has active products. Reassign those products before deactivating it."
+      );
+    }
+  }
+
+  const previousName = category.name;
+
+  try {
+    if (payload.name && payload.name !== category.name) {
+      category.name = payload.name;
+
+      category.slug =
+        payload.slug || (await generateUniqueSlug(payload.name, categoryId));
+    } else if (payload.slug) {
+      category.slug = createSlug(payload.slug);
+    }
+
+    if (payload.description !== undefined) {
+      category.description = payload.description;
+    }
+
+    if (payload.image !== undefined) {
+      category.image = payload.image;
+    }
+
+    if (payload.isActive !== undefined) {
+      category.isActive = payload.isActive;
+    }
+
+    await category.save();
+
+    if (previousName !== category.name) {
+      await Product.updateMany(
+        { category: previousName },
+        { $set: { category: category.name } }
+      );
+    }
+
+    return category;
+  } catch (error) {
+    handleDuplicateError(error);
+  }
+};
+
+const deactivateCategory = async (categoryId) =>
+  updateCategory(categoryId, { isActive: false });
+
+const activateCategory = async (categoryId) =>
+  updateCategory(categoryId, { isActive: true });
+
+const categoryService = {
+  getPublicCategories,
+  getCategoryBySlug,
+  getAdminCategories,
+  createCategory,
+  updateCategory,
+  deactivateCategory,
+  activateCategory,
+};
+
+export default categoryService;
+
+
+========== src/routes/admin/admin.routes.js ==========
+
+import { Router } from "express";
+
+import authenticate from "../../middleware/auth/auth.middleware.js";
+import authorizeAdmin from "../../middleware/admin.middleware.js";
+import validate from "../../middleware/validate.middleware.js";
+
+import adminController from "../../controllers/admin/admin.controller.js";
+import adminOrderController from "../../controllers/admin/admin-order.controller.js";
+import adminCustomerController from "../../controllers/admin/admin-customer.controller.js";
+import {
+  updateAdminOrderStatusSchema,
+  cancelAdminOrderSchema,
+} from "../../validators/order/admin-order.validator.js";
+
+const router = Router();
+
+router.use(authenticate, authorizeAdmin);
+
+// Dashboard
+router.get("/dashboard", adminController.getDashboardStats);
+
+// Product management
+router.get("/products", adminController.getAdminProducts);
+router.get("/products/:id", adminController.getAdminProductById);
+router.patch("/products/:id/activate", adminController.activateProduct);
+router.patch("/products/:id/deactivate", adminController.deactivateProduct);
+
+// Order management
+router.get("/orders", adminOrderController.getAdminOrders);
+
+router.get(
+  "/orders/:orderId",
+  adminOrderController.getAdminOrderById
+);
+
+router.patch(
+  "/orders/:orderId/status",
+  validate(updateAdminOrderStatusSchema),
+  adminOrderController.updateAdminOrderStatus
+);
+
+router.patch(
+  "/orders/:orderId/cancel",
+  validate(cancelAdminOrderSchema),
+  adminOrderController.cancelAdminOrder
+);
+// Customer management
+router.get(
+  "/customers",
+  adminCustomerController.getAdminCustomers
+);
+
+router.get(
+  "/customers/:customerId",
+  adminCustomerController.getAdminCustomerById
+);
+
+router.patch(
+  "/customers/:customerId/status",
+  adminCustomerController.updateCustomerStatus
+);
+
+export default router;
+

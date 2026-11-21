@@ -1,7 +1,7 @@
-
 import mongoose from "mongoose";
 
 import Product from "../../models/product/Product.model.js";
+import Category from "../../models/category/Category.model.js";
 import ApiError from "../../utils/ApiError.js";
 import { HTTP_STATUS } from "../../constants/index.js";
 import imageService from "./image.service.js";
@@ -26,11 +26,7 @@ const throwBadRequest = (message) => {
 const parseInteger = (value, field, { min, max }) => {
   const parsed = Number(value);
 
-  if (
-    !Number.isSafeInteger(parsed) ||
-    parsed < min ||
-    parsed > max
-  ) {
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
     throwBadRequest(
       `${field} must be an integer between ${min} and ${max}.`
     );
@@ -77,6 +73,54 @@ const handleDatabaseError = (error) => {
   throw error;
 };
 
+// Resolve a category while preserving legacy string compatibility.
+const resolveCategory = async ({ categoryId, category }) => {
+  if (categoryId !== undefined) {
+    if (!mongoose.isValidObjectId(categoryId)) {
+      throwBadRequest("Invalid category ID.");
+    }
+
+    const categoryDocument = await Category.findOne({
+      _id: categoryId,
+      isActive: true,
+    }).select("_id name");
+
+    if (!categoryDocument) {
+      throw new ApiError(
+        HTTP_STATUS.NOT_FOUND,
+        "Selected category was not found or is inactive."
+      );
+    }
+
+    return {
+      categoryId: categoryDocument._id,
+      category: categoryDocument.name,
+    };
+  }
+
+  if (category !== undefined) {
+    const categoryDocument = await Category.findOne({
+      name: category,
+      isActive: true,
+    }).select("_id name");
+
+    if (categoryDocument) {
+      return {
+        categoryId: categoryDocument._id,
+        category: categoryDocument.name,
+      };
+    }
+
+    // Existing legacy products and clients remain compatible.
+    return {
+      category,
+      categoryId: null,
+    };
+  }
+
+  return {};
+};
+
 const normalizeProductQuery = (query = {}) => {
   const allowedFields = new Set([
     "search",
@@ -97,17 +141,11 @@ const normalizeProductQuery = (query = {}) => {
     }
   }
 
-  if (
-    query.search !== undefined &&
-    typeof query.search !== "string"
-  ) {
+  if (query.search !== undefined && typeof query.search !== "string") {
     throwBadRequest("Search must be a valid string.");
   }
 
-  if (
-    query.category !== undefined &&
-    typeof query.category !== "string"
-  ) {
+  if (query.category !== undefined && typeof query.category !== "string") {
     throwBadRequest("Category must be a valid string.");
   }
 
@@ -212,7 +250,34 @@ const getProducts = async (query) => {
     filter.$text = { $search: search };
   }
 
-  if (category) filter.category = category;
+  if (category) {
+    let categoryDocument = null;
+
+    if (mongoose.isValidObjectId(category)) {
+      categoryDocument = await Category.findOne({
+        _id: category,
+        isActive: true,
+      }).select("_id name");
+    } else {
+      categoryDocument = await Category.findOne({
+        slug: category,
+        isActive: true,
+      }).select("_id name");
+    }
+
+    if (categoryDocument) {
+      filter.$or = [
+        { categoryId: categoryDocument._id },
+        {
+          category: categoryDocument.name,
+          categoryId: null,
+        },
+      ];
+    } else {
+      // Backward compatibility for legacy category-name filters.
+      filter.category = category;
+    }
+  }
 
   if (isNewArrival !== undefined) {
     filter.isNewArrival = isNewArrival;
@@ -278,13 +343,17 @@ const getProductBySlug = async (slug) => {
   return product;
 };
 
-const getCategories = async () => {
-  return Product.distinct("category", { isActive: true });
-};
+const getCategories = async () =>
+  Product.distinct("category", { isActive: true });
 
 const createProduct = async (values) => {
   try {
-    return await Product.create(values);
+    const categoryValues = await resolveCategory(values);
+
+    return await Product.create({
+      ...values,
+      ...categoryValues,
+    });
   } catch (error) {
     handleDatabaseError(error);
   }
@@ -310,9 +379,7 @@ const updateProduct = async (productId, values) => {
   }));
 
   const updatedPrice =
-    values.price !== undefined
-      ? values.price
-      : product.price;
+    values.price !== undefined ? values.price : product.price;
 
   const updatedCompareAtPrice =
     values.compareAtPrice !== undefined
@@ -331,7 +398,14 @@ const updateProduct = async (productId, values) => {
 
   const updateValues = { ...values };
 
-  // Keep the legacy main image field synchronized.
+  if (
+    values.categoryId !== undefined ||
+    values.category !== undefined
+  ) {
+    const categoryValues = await resolveCategory(values);
+    Object.assign(updateValues, categoryValues);
+  }
+
   if (updateValues.images?.length > 0) {
     updateValues.image = updateValues.images[0].url;
   }
