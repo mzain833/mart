@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 import Order from "../../models/order/Order.model.js";
@@ -7,7 +8,7 @@ import User from "../../models/user/User.model.js";
 import ApiError from "../../utils/ApiError.js";
 import { HTTP_STATUS } from "../../constants/index.js";
 
-const LOW_STOCK_THRESHOLD = 8;
+const LOW_STOCK_THRESHOLD = 5;
 const RECENT_ORDERS_LIMIT = 8;
 const LOW_STOCK_LIMIT = 8;
 
@@ -21,8 +22,8 @@ const SORT_OPTIONS = Object.freeze({
   oldest: { createdAt: 1, _id: 1 },
   price_asc: { price: 1, _id: 1 },
   price_desc: { price: -1, _id: -1 },
-  name_asc: { name: 1, _id: 1 },
-  name_desc: { name: -1, _id: -1 },
+  name_asc: { name: 1, _id: -1 },
+  name_desc: { name: -1, _id: 1 },
 });
 
 const ACTIVE_ORDER_STATUSES = [
@@ -38,7 +39,6 @@ const throwBadRequest = (message) => {
 
 const escapeRegex = (value) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 
 const parseInteger = (value, field, min, max) => {
   const normalizedValue = String(value);
@@ -63,7 +63,6 @@ const parseInteger = (value, field, min, max) => {
 
   return parsed;
 };
-
 
 const normalizeAdminProductQuery = (query = {}) => {
   const allowedFields = new Set([
@@ -154,127 +153,120 @@ const normalizeAdminProductQuery = (query = {}) => {
 };
 
 const getDashboardStats = async () => {
- 
+  const [
+    totalOrders,
+    totalProducts,
+    totalCustomers,
+    activeCustomers,
+    inactiveCustomers,
+    activeOrders,
+    totalCancelledOrders,
+    revenueResult,
+    orderValueResult,
+    cancelledValueResult,
+    lowStockCount,
+    recentOrders,
+    lowStockProducts,
+  ] = await Promise.all([
+    Order.countDocuments(),
 
-const [
-  totalOrders,
-  totalProducts,
-  totalCustomers,
-  activeCustomers,
-  inactiveCustomers,
-  activeOrders,
-  totalCancelledOrders,
-  revenueResult,
-  orderValueResult,
-  cancelledValueResult,
-  lowStockCount,
-  recentOrders,
-  lowStockProducts,
-] = await Promise.all([
-  Order.countDocuments(),
+    Product.countDocuments({ isActive: true }),
 
-  Product.countDocuments({ isActive: true }),
+    User.countDocuments({ role: "customer" }),
 
-  User.countDocuments({ role: "customer" }),
+    User.countDocuments({
+      role: "customer",
+      isActive: true,
+    }),
 
-  User.countDocuments({
-    role: "customer",
-    isActive: true,
-  }),
+    User.countDocuments({
+      role: "customer",
+      isActive: false,
+    }),
 
-  User.countDocuments({
-    role: "customer",
-    isActive: false,
-  }),
+    Order.countDocuments({
+      status: { $in: ACTIVE_ORDER_STATUSES },
+    }),
 
-  Order.countDocuments({
-    status: {
-      $in: ["placed", "confirmed", "processing", "shipped"],
-    },
-  }),
+    Order.countDocuments({ status: "cancelled" }),
 
-  Order.countDocuments({ status: "cancelled" }),
-
-  Order.aggregate([
-    {
-      $match: {
-        paymentStatus: "paid",
-        status: { $ne: "cancelled" },
+    Order.aggregate([
+      {
+        $match: {
+          paymentStatus: "paid",
+          status: { $ne: "cancelled" },
+        },
       },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: "$total" },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$total" },
+        },
       },
-    },
-  ]),
+    ]),
 
-  Order.aggregate([
-    {
-      $group: {
-        _id: null,
-        total: { $sum: "$total" },
+    Order.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$total" },
+        },
       },
-    },
-  ]),
+    ]),
 
-  Order.aggregate([
-    {
-      $match: { status: "cancelled" },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: "$total" },
+    Order.aggregate([
+      {
+        $match: { status: "cancelled" },
       },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$total" },
+        },
+      },
+    ]),
+
+    Product.countDocuments({
+      isActive: true,
+      stock: { $lte: LOW_STOCK_THRESHOLD },
+    }),
+
+    Order.find()
+      .sort({ createdAt: -1 })
+      .limit(RECENT_ORDERS_LIMIT)
+      .select(
+        "orderNumber customer.fullName total status paymentStatus createdAt"
+      )
+      .lean(),
+
+    Product.find({
+      isActive: true,
+      stock: { $lte: LOW_STOCK_THRESHOLD },
+    })
+      .sort({ stock: 1 })
+      .limit(LOW_STOCK_LIMIT)
+      .select("name sku price stock image category")
+      .lean(),
+  ]);
+
+  return {
+    stats: {
+      totalRevenue: revenueResult[0]?.total ?? 0,
+      totalOrderValue: orderValueResult[0]?.total ?? 0,
+      cancelledOrderValue: cancelledValueResult[0]?.total ?? 0,
+      totalOrders,
+      totalCancelledOrders,
+      activeOrders,
+      totalProducts,
+      totalCustomers,
+      activeCustomers,
+      inactiveCustomers,
+      lowStockCount,
     },
-  ]),
-
-  Product.countDocuments({
-    isActive: true,
-    stock: { $lte: 5 },
-  }),
-
-  Order.find()
-    .sort({ createdAt: -1 })
-    .limit(8)
-    .select(
-      "orderNumber customer.fullName total status paymentStatus createdAt"
-    )
-    .lean(),
-
-  Product.find({
-    isActive: true,
-    stock: { $lte: 5 },
-  })
-    .sort({ stock: 1 })
-    .limit(8)
-    .select("name sku price stock image category")
-    .lean(),
-]);
-
-const stats = {
-  totalRevenue: revenueResult[0]?.total || 0,
-  totalOrderValue: orderValueResult[0]?.total || 0,
-  cancelledOrderValue: cancelledValueResult[0]?.total || 0,
-  totalOrders,
-  totalCancelledOrders,
-  activeOrders,
-  totalProducts,
-  totalCustomers,
-  activeCustomers,
-  inactiveCustomers,
-  lowStockCount,
+    recentOrders,
+    lowStockProducts,
+  };
 };
-
-return {
-  stats,
-  recentOrders,
-  lowStockProducts,
-};
-};
-
 
 const getAdminProducts = async (query = {}) => {
   const {
@@ -289,8 +281,13 @@ const getAdminProducts = async (query = {}) => {
 
   const filter = {};
 
-  if (status === "active") filter.isActive = true;
-  if (status === "inactive") filter.isActive = false;
+  if (status === "active") {
+    filter.isActive = true;
+  }
+
+  if (status === "inactive") {
+    filter.isActive = false;
+  }
 
   if (search) {
     const searchRegex = new RegExp(escapeRegex(search), "i");
@@ -303,7 +300,10 @@ const getAdminProducts = async (query = {}) => {
 
   if (category) {
     const categoryDocument = mongoose.isValidObjectId(category)
-      ? await Category.findOne({ _id: category, isActive: true })
+      ? await Category.findOne({
+          _id: category,
+          isActive: true,
+        })
           .select("_id name")
           .lean()
       : await Category.findOne({
@@ -348,7 +348,10 @@ const getAdminProducts = async (query = {}) => {
   }
 
   if (stockStatus === "low_stock") {
-    filter.stock = { $gt: 0, $lte: LOW_STOCK_THRESHOLD };
+    filter.stock = {
+      $gt: 0,
+      $lte: LOW_STOCK_THRESHOLD,
+    };
   }
 
   if (stockStatus === "out_of_stock") {
@@ -384,7 +387,9 @@ const getAdminProducts = async (query = {}) => {
     ...categoryDocuments.map((item) => item.name),
     ...legacyCategories,
   ]) {
-    if (typeof name !== "string" || !name.trim()) continue;
+    if (typeof name !== "string" || !name.trim()) {
+      continue;
+    }
 
     const normalizedName = name.trim();
     const key = normalizedName.toLocaleLowerCase();
@@ -433,9 +438,17 @@ const updateProductStatus = async (productId, isActive) => {
   }
 
   const product = await Product.findOneAndUpdate(
-    { _id: productId, isActive: !isActive },
-    { $set: { isActive } },
-    { new: true, runValidators: true }
+    {
+      _id: productId,
+      isActive: !isActive,
+    },
+    {
+      $set: { isActive },
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
   ).lean();
 
   if (!product) {

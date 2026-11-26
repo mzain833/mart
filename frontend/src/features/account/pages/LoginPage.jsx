@@ -125,10 +125,7 @@ if (isAuthenticated) {
             Don't have an account? <Link to="/register">Create Account</Link>
           </p>
 
-          <p className="auth-demo-note">
-            Demo mode: any valid email and password of at least 8 characters
-            will create a demo session. No real authentication is performed.
-          </p>
+          
         </section>
       </main>
     </MainLayout>

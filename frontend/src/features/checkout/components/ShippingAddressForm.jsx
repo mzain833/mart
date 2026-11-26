@@ -1,4 +1,3 @@
-
 const fields = [
   {
     name: "addressLine1",
@@ -11,6 +10,7 @@ const fields = [
     label: "Apartment / Landmark",
     placeholder: "Optional",
     wide: true,
+    optional: true,
   },
   {
     name: "city",
@@ -21,6 +21,12 @@ const fields = [
     name: "province",
     label: "Province",
     placeholder: "e.g. Islamabad Capital Territory",
+  },
+  {
+    name: "area",
+    label: "Area / Sector",
+    placeholder: "e.g. F-7, G-10, Bahria Town",
+    wide: true,
   },
   {
     name: "postalCode",
@@ -34,6 +40,7 @@ const ShippingAddressForm = ({ values, errors, onChange }) => {
     <section className="checkout-section">
       <div className="checkout-section-heading">
         <span className="checkout-section-number">02</span>
+
         <div>
           <h2>Shipping Address</h2>
           <p>Where should we deliver your order?</p>
@@ -48,7 +55,8 @@ const ShippingAddressForm = ({ values, errors, onChange }) => {
           >
             <label htmlFor={field.name}>
               {field.label}
-              {field.name === "addressLine2" && (
+
+              {field.optional && (
                 <span className="optional-label"> (Optional)</span>
               )}
             </label>
@@ -58,13 +66,15 @@ const ShippingAddressForm = ({ values, errors, onChange }) => {
               name={field.name}
               type="text"
               placeholder={field.placeholder}
-              value={values[field.name]}
+              value={values[field.name] ?? ""}
               onChange={(event) =>
                 onChange(field.name, event.target.value)
               }
               aria-invalid={Boolean(errors[field.name])}
               aria-describedby={
-                errors[field.name] ? `${field.name}-error` : undefined
+                errors[field.name]
+                  ? `${field.name}-error`
+                  : undefined
               }
             />
 

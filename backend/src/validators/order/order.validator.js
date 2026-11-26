@@ -9,6 +9,7 @@ const customerSchema = z.object({
   addressLine2: z.string().trim().max(200).optional().default(""),
   city: z.string().trim().min(2).max(80),
   province: z.string().trim().min(2).max(80),
+   area: z.string().trim().min(2).max(150),
   postalCode: z.string().trim().min(2).max(20),
 }).strict();
 
@@ -22,7 +23,7 @@ const orderItemSchema = z.object({
 export const createOrderSchema = z.object({
   customer: customerSchema,
   items: z.array(orderItemSchema).min(1).max(50),
-  deliveryMethod: z.enum(["standard", "express"]),
+ deliveryMethod: z.literal("standard"),
   paymentMethod: z.literal("cod"),
 }).strict();
 

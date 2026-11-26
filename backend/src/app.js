@@ -14,6 +14,8 @@ import notFoundMiddleware from "./middleware/not-found.middleware.js";
 import errorMiddleware from "./middleware/error.middleware.js";
 import categoryRoutes from "./routes/category/category.routes.js";
 import adminCategoryRoutes from "./routes/category/category.admin.routes.js";
+import shippingRoutes from "./routes/shipping/shipping.routes.js";
+import customerShippingRoutes from "./routes/shipping/customer-shipping.routes.js";
 const app = express();
 
 // Security
@@ -61,7 +63,8 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/categories", categoryRoutes);
 app.use("/api/v1/admin/categories", adminCategoryRoutes);
-
+app.use("/api/v1/admin/shipping-zones", shippingRoutes);
+app.use("/api/v1/shipping", customerShippingRoutes);
 // Error handling
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

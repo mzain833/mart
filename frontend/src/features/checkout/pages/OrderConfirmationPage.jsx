@@ -188,6 +188,27 @@ const OrderConfirmationPage = () => {
                 </div>
               </div>
 
+              <div>
+  <span>Delivery Charges</span>
+  <strong>
+    {order.deliveryFee != null
+      ? formatOrderPrice(order.deliveryFee)
+      : "Unavailable"}
+  </strong>
+</div>
+
+<div>
+  <span>Delivery Area</span>
+  <strong>
+    {[
+      order.shipping?.area || order.customer?.area,
+      order.shipping?.city || order.customer?.city,
+    ]
+      .filter(Boolean)
+      .join(", ")}
+  </strong>
+</div>
+
               <div className="confirmation-order-items">
                 <h3>Ordered Products</h3>
 
@@ -215,9 +236,9 @@ const OrderConfirmationPage = () => {
               </div>
 
               <p className="confirmation-note">
-                Your order has been securely saved. Delivery charges
-                will be confirmed before dispatch.
-              </p>
+  Your order and delivery charges have been securely confirmed.
+  Please keep your order reference for future communication.
+</p>
 
               <Link to="/shop" className="confirmation-button">
                 Continue Shopping

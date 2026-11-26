@@ -159,10 +159,7 @@ const RegisterPage = () => {
             Already have an account? <Link to="/login">Sign In</Link>
           </p>
 
-          <p className="auth-demo-note">
-            Demo mode only. Passwords are not stored. Connect a secure
-            backend before using real customer accounts.
-          </p>
+         
         </section>
       </main>
     </MainLayout>

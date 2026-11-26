@@ -85,6 +85,12 @@ const customerSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    area: {
+  type: String,
+  required: true,
+  trim: true,
+  maxlength: 150,
+},
     province: {
       type: String,
       required: true,
@@ -174,6 +180,40 @@ const orderSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    shipping: {
+  zoneId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "ShippingZone",
+    required: true,
+  },
+  zoneName: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  city: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  province: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  area: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  deliveryFee: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+},
+
+
     deliveryMethod: {
       type: String,
       required: true,
@@ -182,7 +222,7 @@ const orderSchema = new mongoose.Schema(
     paymentMethod: {
       type: String,
       required: true,
-      enum: ["cod",],
+      enum: ["cod"],
     },
     paymentStatus: {
       type: String,

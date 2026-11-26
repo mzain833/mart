@@ -26,6 +26,7 @@ const INITIAL_FORM_VALUES = {
   addressLine2: "",
   city: "",
   province: "",
+  area: "",
   postalCode: "",
 };
 
@@ -58,6 +59,10 @@ const validateForm = (values) => {
     errors.province = "Please enter your province.";
   }
 
+  if (values.area.trim().length < 2) {
+    errors.area = "Please enter your area or sector.";
+  }
+
   if (values.postalCode.trim().length < 2) {
     errors.postalCode = "Please enter your postal code.";
   }
@@ -86,6 +91,10 @@ const CheckoutPage = () => {
   const [deliveryMethod, setDeliveryMethod] = useState("standard");
   const [paymentMethod, setPaymentMethod] = useState("cod");
 
+  const [shippingQuote, setShippingQuote] = useState(null);
+  const [shippingQuoteLoading, setShippingQuoteLoading] = useState(false);
+  const [shippingQuoteError, setShippingQuoteError] = useState("");
+
   const subtotal = useMemo(
     () =>
       cartItems.reduce(
@@ -95,6 +104,59 @@ const CheckoutPage = () => {
       ),
     [cartItems]
   );
+
+  useEffect(() => {
+    const { city, province, area } = formValues;
+
+    if (
+      city.trim().length < 2 ||
+      province.trim().length < 2 ||
+      area.trim().length < 2
+    ) {
+      setShippingQuote(null);
+      setShippingQuoteError("");
+      setShippingQuoteLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setShippingQuote(null);
+    setShippingQuoteError("");
+    setShippingQuoteLoading(true);
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const quote = await orderService.getShippingQuote(
+          { city, province, area },
+          { signal: controller.signal }
+        );
+
+        if (!controller.signal.aborted) {
+          setShippingQuote(quote);
+          setShippingQuoteError(
+            quote ? "" : "Delivery quote is unavailable."
+          );
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setShippingQuote(null);
+          setShippingQuoteError(
+            error.response?.data?.message ||
+              "Delivery is not available for this address."
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setShippingQuoteLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [formValues.city, formValues.province, formValues.area]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -139,6 +201,13 @@ const CheckoutPage = () => {
       return;
     }
 
+    if (!shippingQuote || shippingQuoteLoading || shippingQuoteError) {
+      setSubmitError(
+        "Please enter a supported delivery area before placing your order."
+      );
+      return;
+    }
+
     const validationErrors = validateForm(formValues);
 
     if (Object.keys(validationErrors).length > 0) {
@@ -161,6 +230,7 @@ const CheckoutPage = () => {
           addressLine2: formValues.addressLine2.trim(),
           city: formValues.city.trim(),
           province: formValues.province.trim(),
+          area: formValues.area.trim(),
           postalCode: formValues.postalCode.trim(),
         },
         items: cartItems,
@@ -289,6 +359,9 @@ const CheckoutPage = () => {
                 items={cartItems}
                 subtotal={subtotal}
                 submitting={submitting}
+                shippingQuote={shippingQuote}
+                shippingQuoteLoading={shippingQuoteLoading}
+                shippingQuoteError={shippingQuoteError}
               />
             </aside>
           </div>

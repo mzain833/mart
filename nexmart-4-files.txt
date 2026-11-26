@@ -1,0 +1,769 @@
+﻿==========================================
+FILE 1: backend/src/app.js
+==========================================
+
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
+
+import authRoutes from "./routes/auth/auth.routes.js";
+import orderRoutes from "./routes/order/order.routes.js";
+import productRoutes from "./routes/product/product.routes.js";
+import adminRoutes from "./routes/admin/admin.routes.js";
+
+import notFoundMiddleware from "./middleware/not-found.middleware.js";
+import errorMiddleware from "./middleware/error.middleware.js";
+import categoryRoutes from "./routes/category/category.routes.js";
+import adminCategoryRoutes from "./routes/category/category.admin.routes.js";
+import shippingRoutes from "./routes/shipping/shipping.routes.js";
+const app = express();
+
+// Security
+app.use(helmet());
+
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL,
+    credentials: true,
+  })
+);
+
+// Request parsing
+app.use(express.json({ limit: "10kb" }));
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+app.use(cookieParser());
+
+// API rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many requests. Please try again later.",
+  },
+});
+
+app.use("/api", apiLimiter);
+
+// Health check
+app.get("/api/v1/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "NexaMart API is operational.",
+    environment: process.env.NODE_ENV || "development",
+  });
+});
+
+// API routes
+app.use("/api/v1/products", productRoutes);
+app.use("/api/v1/orders", orderRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/categories", categoryRoutes);
+app.use("/api/v1/admin/categories", adminCategoryRoutes);
+app.use("/api/v1/admin/shipping-zones", shippingRoutes);
+// Error handling
+app.use(notFoundMiddleware);
+app.use(errorMiddleware);
+
+export default app;
+
+
+==========================================
+FILE 2: backend/src/services/order/order.service.js
+==========================================
+
+import { randomBytes, randomUUID, createHash } from "node:crypto";
+
+import mongoose from "mongoose";
+
+import Order from "../../models/order/Order.model.js";
+import Product from "../../models/product/Product.model.js";
+
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const MAX_ORDER_QUANTITY = 100;
+const GUEST_TOKEN_BYTES = 32;
+
+const generateOrderNumber = () =>
+  `NEXA-${Date.now().toString().slice(-8)}-${randomUUID()
+    .replace(/-/g, "")
+    .slice(0, 8)
+    .toUpperCase()}`;
+
+const generateGuestAccessToken = () =>
+  randomBytes(GUEST_TOKEN_BYTES).toString("hex");
+
+const hashGuestAccessToken = (token) =>
+  createHash("sha256").update(token).digest("hex");
+
+const normalizeEmail = (email) =>
+  String(email || "").trim().toLowerCase();
+
+const sanitizeOrder = (order) => {
+  if (!order) return null;
+
+  const safeOrder = order.toObject
+    ? order.toObject()
+    : { ...order };
+
+  delete safeOrder.guestAccessTokenHash;
+
+  return safeOrder;
+};
+
+const validateOrderId = (orderId) => {
+  if (!mongoose.isValidObjectId(orderId)) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid order ID."
+    );
+  }
+};
+
+const createOrder = async ({
+  customer,
+  items,
+  deliveryMethod,
+  paymentMethod,
+  userId = null,
+}) => {
+  if (!customer || !Array.isArray(items) || items.length === 0) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Required order information is missing."
+    );
+  }
+
+  if (paymentMethod !== "cod") {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Currently, only Cash on Delivery is available."
+    );
+  }
+
+  if (deliveryMethod !== "standard") {
+  throw new ApiError(
+    HTTP_STATUS.BAD_REQUEST,
+    "Currently, only standard delivery is available."
+  );
+}
+
+  if (items.length > 50) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "An order cannot contain more than 50 products."
+    );
+  }
+
+  const normalizedItems = items.map((item) => ({
+    sku: String(item.sku || "").trim().toUpperCase(),
+    quantity: Number(item.quantity),
+  }));
+
+  const uniqueSkus = new Set(
+    normalizedItems.map((item) => item.sku)
+  );
+
+  if (
+    uniqueSkus.size !== normalizedItems.length ||
+    normalizedItems.some(
+      (item) =>
+        !item.sku ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1 ||
+        item.quantity > MAX_ORDER_QUANTITY
+    )
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid or duplicate products in your order."
+    );
+  }
+
+  const guestAccessToken = userId
+    ? null
+    : generateGuestAccessToken();
+
+  const guestAccessTokenHash = guestAccessToken
+    ? hashGuestAccessToken(guestAccessToken)
+    : null;
+
+  const session = await mongoose.startSession();
+
+  let createdOrder;
+
+  try {
+    await session.withTransaction(async () => {
+      const products = await Product.find({
+        sku: { $in: normalizedItems.map((item) => item.sku) },
+        isActive: true,
+      }).session(session);
+
+      if (products.length !== normalizedItems.length) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "One or more products are unavailable."
+        );
+      }
+
+      const productMap = new Map(
+        products.map((product) => [product.sku, product])
+      );
+
+      const orderItems = [];
+      let subtotal = 0;
+
+      for (const item of normalizedItems) {
+        const product = productMap.get(item.sku);
+
+        if (!product) {
+          throw new ApiError(
+            HTTP_STATUS.NOT_FOUND,
+            `Product ${item.sku} was not found.`
+          );
+        }
+
+        if (product.stock < item.quantity) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            `Insufficient stock for ${product.name}.`
+          );
+        }
+
+        const unitPrice = Number(product.price);
+        const lineTotal = unitPrice * item.quantity;
+
+        if (
+          !Number.isFinite(unitPrice) ||
+          unitPrice < 0 ||
+          !Number.isFinite(lineTotal)
+        ) {
+          throw new ApiError(
+            HTTP_STATUS.INTERNAL_SERVER_ERROR,
+            "Invalid product pricing configuration."
+          );
+        }
+
+        subtotal += lineTotal;
+
+        orderItems.push({
+          product: {
+            productId: product._id,
+            sku: product.sku,
+            name: product.name,
+            slug: product.slug,
+            image: product.image,
+          },
+          quantity: item.quantity,
+          unitPrice,
+          lineTotal,
+        });
+      }
+
+      for (const item of normalizedItems) {
+        const product = productMap.get(item.sku);
+
+        const stockUpdate = await Product.updateOne(
+          {
+            _id: product._id,
+            isActive: true,
+            stock: { $gte: item.quantity },
+          },
+          {
+            $inc: { stock: -item.quantity },
+          },
+          { session }
+        );
+
+        if (stockUpdate.modifiedCount !== 1) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            `Stock changed for ${product.name}. Please try again.`
+          );
+        }
+      }
+
+      const orderData = {
+        orderNumber: generateOrderNumber(),
+        user: userId || null,
+        guestAccessTokenHash,
+        customer: {
+          fullName: customer.fullName.trim(),
+          email: normalizeEmail(customer.email),
+          phone: customer.phone.trim(),
+          addressLine1: customer.addressLine1.trim(),
+          addressLine2: customer.addressLine2?.trim() || "",
+          city: customer.city.trim(),
+          province: customer.province.trim(),
+          postalCode: customer.postalCode.trim(),
+        },
+        items: orderItems,
+        subtotal,
+        deliveryFee: null,
+        total: subtotal,
+        deliveryMethod,
+        paymentMethod: "cod",
+        paymentStatus: "pending",
+        status: "placed",
+        statusHistory: [
+          {
+            status: "placed",
+            timestamp: new Date(),
+            note: "Your order has been successfully placed.",
+          },
+        ],
+      };
+
+      const [order] = await Order.create(
+        [orderData],
+        { session }
+      );
+
+      createdOrder = order;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return {
+    order: sanitizeOrder(createdOrder),
+    guestAccessToken,
+  };
+};
+
+const getCustomerOrders = async (userId) => {
+  return Order.find({ user: userId })
+    .sort({ createdAt: -1 })
+    .lean();
+};
+
+const getCustomerOrderById = async (orderId, userId) => {
+  validateOrderId(orderId);
+
+  const order = await Order.findOne({
+    _id: orderId,
+    user: userId,
+  }).lean();
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found."
+    );
+  }
+
+  return order;
+};
+
+const getGuestOrderConfirmation = async (
+  orderId,
+  accessToken
+) => {
+  validateOrderId(orderId);
+
+  if (
+    typeof accessToken !== "string" ||
+    !/^[a-f\d]{64}$/i.test(accessToken)
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.UNAUTHORIZED,
+      "Invalid order access credentials."
+    );
+  }
+
+  const tokenHash = hashGuestAccessToken(accessToken);
+
+  const order = await Order.findOne({
+    _id: orderId,
+    user: null,
+    guestAccessTokenHash: tokenHash,
+  })
+    .select("+guestAccessTokenHash")
+    .lean();
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found or access denied."
+    );
+  }
+
+  delete order.guestAccessTokenHash;
+
+  return order;
+};
+
+const cancelOrder = async (orderId, userId, reason) => {
+  validateOrderId(orderId);
+
+  const normalizedReason = String(reason || "").trim();
+
+  if (
+    normalizedReason.length < 5 ||
+    normalizedReason.length > 500
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Cancellation reason must contain 5 to 500 characters."
+    );
+  }
+
+  const session = await mongoose.startSession();
+
+  let cancelledOrder;
+
+  try {
+    await session.withTransaction(async () => {
+      const order = await Order.findOne({
+        _id: orderId,
+        user: userId,
+      }).session(session);
+
+      if (!order) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "Order not found."
+        );
+      }
+
+      if (
+        !["placed", "confirmed", "processing"].includes(
+          order.status
+        )
+      ) {
+        throw new ApiError(
+          HTTP_STATUS.BAD_REQUEST,
+          "This order is no longer eligible for cancellation."
+        );
+      }
+
+      for (const item of order.items) {
+        const stockUpdate = await Product.updateOne(
+          { _id: item.product.productId },
+          { $inc: { stock: item.quantity } },
+          { session }
+        );
+
+        if (stockUpdate.matchedCount !== 1) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            "Unable to restore product inventory."
+          );
+        }
+      }
+
+      order.status = "cancelled";
+      order.cancellationReason = normalizedReason;
+
+      order.statusHistory.push({
+        status: "cancelled",
+        timestamp: new Date(),
+        note: normalizedReason,
+      });
+
+      await order.save({ session });
+
+      cancelledOrder = order;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return sanitizeOrder(cancelledOrder);
+};
+
+const orderService = {
+  createOrder,
+  getCustomerOrders,
+  getCustomerOrderById,
+  getGuestOrderConfirmation,
+  cancelOrder,
+};
+
+export default orderService;
+
+
+==========================================
+FILE 3: backend/src/services/shipping/shipping.service.js
+==========================================
+
+import mongoose from "mongoose";
+
+import ShippingZone from "../../models/shipping/ShippingZone.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  name_asc: { name: 1 },
+  name_desc: { name: -1 },
+});
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normalizeLocation = (value) =>
+  value.trim().replace(/\s+/g, " ");
+
+const getLocationFilter = ({ city, province, area }, excludeId = null) => {
+  const filter = {
+    city: new RegExp(`^${escapeRegex(normalizeLocation(city))}$`, "i"),
+    province: new RegExp(
+      `^${escapeRegex(normalizeLocation(province))}$`,
+      "i"
+    ),
+    area: new RegExp(`^${escapeRegex(normalizeLocation(area))}$`, "i"),
+  };
+
+  if (excludeId) {
+    filter._id = { $ne: excludeId };
+  }
+
+  return filter;
+};
+
+const validateZoneId = (id) => {
+  if (!mongoose.isValidObjectId(id)) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid shipping zone ID."
+    );
+  }
+};
+
+const findZoneOrFail = async (id) => {
+  validateZoneId(id);
+
+  const zone = await ShippingZone.findById(id);
+
+  if (!zone) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Shipping zone not found."
+    );
+  }
+
+  return zone;
+};
+
+const ensureUniqueLocation = async (values, excludeId = null) => {
+  const existingZone = await ShippingZone.findOne(
+    getLocationFilter(values, excludeId)
+  ).lean();
+
+  if (existingZone) {
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      "A shipping zone already exists for this location."
+    );
+  }
+};
+
+const handleDatabaseError = (error) => {
+  if (error.code === 11000) {
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      "A shipping zone already exists for this location."
+    );
+  }
+
+  throw error;
+};
+
+const getAdminShippingZones = async (query = {}) => {
+  const page = Math.max(
+    DEFAULT_PAGE,
+    Number.parseInt(query.page, 10) || DEFAULT_PAGE
+  );
+
+  const limit = Math.min(
+    MAX_LIMIT,
+    Math.max(1, Number.parseInt(query.limit, 10) || DEFAULT_LIMIT)
+  );
+
+  const filter = {};
+
+  if (query.search?.trim()) {
+    const search = escapeRegex(query.search.trim().slice(0, 100));
+
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { city: { $regex: search, $options: "i" } },
+      { province: { $regex: search, $options: "i" } },
+      { area: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (query.status === "active") {
+    filter.isActive = true;
+  } else if (query.status === "inactive") {
+    filter.isActive = false;
+  }
+
+  const sort = SORT_OPTIONS[query.sort] || SORT_OPTIONS.newest;
+  const skip = (page - 1) * limit;
+
+  const [zones, total] = await Promise.all([
+    ShippingZone.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    ShippingZone.countDocuments(filter),
+  ]);
+
+  return {
+    zones,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const createShippingZone = async (payload) => {
+  const values = {
+    ...payload,
+    name: normalizeLocation(payload.name),
+    city: normalizeLocation(payload.city),
+    province: normalizeLocation(payload.province),
+    area: normalizeLocation(payload.area),
+  };
+
+  await ensureUniqueLocation(values);
+
+  try {
+    return await ShippingZone.create(values);
+  } catch (error) {
+    handleDatabaseError(error);
+  }
+};
+
+const updateShippingZone = async (id, payload) => {
+  const zone = await findZoneOrFail(id);
+
+  const updates = { ...payload };
+
+  for (const field of ["name", "city", "province", "area"]) {
+    if (updates[field] !== undefined) {
+      updates[field] = normalizeLocation(updates[field]);
+    }
+  }
+
+  const nextLocation = {
+    city: updates.city ?? zone.city,
+    province: updates.province ?? zone.province,
+    area: updates.area ?? zone.area,
+  };
+
+  if (
+    updates.city !== undefined ||
+    updates.province !== undefined ||
+    updates.area !== undefined
+  ) {
+    await ensureUniqueLocation(nextLocation, zone._id);
+  }
+
+  Object.assign(zone, updates);
+
+  try {
+    await zone.save();
+    return zone;
+  } catch (error) {
+    handleDatabaseError(error);
+  }
+};
+
+const activateShippingZone = async (id) =>
+  updateShippingZone(id, { isActive: true });
+
+const deactivateShippingZone = async (id) =>
+  updateShippingZone(id, { isActive: false });
+
+const shippingService = {
+  getAdminShippingZones,
+  createShippingZone,
+  updateShippingZone,
+  activateShippingZone,
+  deactivateShippingZone,
+};
+
+export default shippingService;
+
+
+==========================================
+FILE 4: backend/src/routes/order/order.routes.js
+==========================================
+
+import { Router } from "express";
+
+import orderController from "../../controllers/order/order.controller.js";
+
+import authenticate from "../../middleware/auth/auth.middleware.js";
+import optionalAuthenticate from "../../middleware/auth/optional-auth.middleware.js";
+import validate from "../../middleware/validate.middleware.js";
+
+import {
+  createOrderSchema,
+  cancelOrderSchema,
+  guestOrderConfirmationSchema,
+} from "../../validators/order/order.validator.js";
+
+const router = Router();
+
+// Create order: registered customer or guest
+router.post(
+  "/",
+  optionalAuthenticate,
+  validate(createOrderSchema),
+  orderController.createOrder
+);
+
+// Guest order confirmation: secure token required
+router.post(
+  "/guest/:orderId/confirmation",
+  validate(guestOrderConfirmationSchema),
+  orderController.getGuestOrderConfirmation
+);
+
+// Registered customer's order history
+router.get(
+  "/my-orders",
+  authenticate,
+  orderController.getMyOrders
+);
+
+// Registered customer's individual order
+router.get(
+  "/:orderId",
+  authenticate,
+  orderController.getMyOrderById
+);
+
+// Cancel registered customer's order
+router.patch(
+  "/:orderId/cancel",
+  authenticate,
+  validate(cancelOrderSchema),
+  orderController.cancelOrder
+);
+
+export default router;
+
+

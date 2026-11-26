@@ -1,0 +1,1911 @@
+﻿==========================================
+FILE 1: backend/src/models/shipping/ShippingZone.model.js
+==========================================
+
+import mongoose from "mongoose";
+
+const shippingZoneSchema = new mongoose.Schema(
+  {
+    name: {
+    name: 
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+    city: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+    province: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+    area: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 150,
+    },
+    deliveryFee: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: {
+        validator: Number.isSafeInteger,
+        message: "Delivery fee must be a valid whole number.",
+      },
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+);
+
+shippingZoneSchema.index(
+  {
+    city: 1,
+    province: 1,
+    area: 1,
+  },
+  {
+    unique: true,
+    name: "unique_shipping_zone_location",
+  }
+);
+
+shippingZoneSchema.index({
+  isActive: 1,
+  city: 1,
+  province: 1,
+});
+
+const ShippingZone = mongoose.model(
+  "ShippingZone",
+  shippingZoneSchema
+);
+
+export default ShippingZone;
+
+
+==========================================
+FILE 2: backend/src/services/shipping/shipping.service.js
+==========================================
+
+import mongoose from "mongoose";
+
+import ShippingZone from "../../models/shipping/ShippingZone.model.js";
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 12;
+const MAX_LIMIT = 100;
+
+const SORT_OPTIONS = Object.freeze({
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  name_asc: { name: 1 },
+  name_desc: { name: -1 },
+});
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normalizeLocation = (value) =>
+  value.trim().replace(/\s+/g, " ");
+
+const getLocationFilter = ({ city, province, area }, excludeId = null) => {
+  const filter = {
+    city: new RegExp(`^${escapeRegex(normalizeLocation(city))}$`, "i"),
+    province: new RegExp(
+      `^${escapeRegex(normalizeLocation(province))}$`,
+      "i"
+    ),
+    area: new RegExp(`^${escapeRegex(normalizeLocation(area))}$`, "i"),
+  };
+
+  if (excludeId) {
+    filter._id = { $ne: excludeId };
+  }
+
+  return filter;
+};
+
+const validateZoneId = (id) => {
+  if (!mongoose.isValidObjectId(id)) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid shipping zone ID."
+    );
+  }
+};
+
+const findZoneOrFail = async (id) => {
+  validateZoneId(id);
+
+  const zone = await ShippingZone.findById(id);
+
+  if (!zone) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Shipping zone not found."
+    );
+  }
+
+  return zone;
+};
+
+const ensureUniqueLocation = async (values, excludeId = null) => {
+  const existingZone = await ShippingZone.findOne(
+    getLocationFilter(values, excludeId)
+  ).lean();
+
+  if (existingZone) {
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      "A shipping zone already exists for this location."
+    );
+  }
+};
+
+const handleDatabaseError = (error) => {
+  if (error.code === 11000) {
+    throw new ApiError(
+      HTTP_STATUS.CONFLICT,
+      "A shipping zone already exists for this location."
+    );
+  }
+
+  throw error;
+};
+
+const getAdminShippingZones = async (query = {}) => {
+  const page = Math.max(
+    DEFAULT_PAGE,
+    Number.parseInt(query.page, 10) || DEFAULT_PAGE
+  );
+
+  const limit = Math.min(
+    MAX_LIMIT,
+    Math.max(1, Number.parseInt(query.limit, 10) || DEFAULT_LIMIT)
+  );
+
+  const filter = {};
+
+  if (query.search?.trim()) {
+    const search = escapeRegex(query.search.trim().slice(0, 100));
+
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { city: { $regex: search, $options: "i" } },
+      { province: { $regex: search, $options: "i" } },
+      { area: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (query.status === "active") {
+    filter.isActive = true;
+  } else if (query.status === "inactive") {
+    filter.isActive = false;
+  }
+
+  const sort = SORT_OPTIONS[query.sort] || SORT_OPTIONS.newest;
+  const skip = (page - 1) * limit;
+
+  const [zones, total] = await Promise.all([
+    ShippingZone.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    ShippingZone.countDocuments(filter),
+  ]);
+
+  return {
+    zones,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
+};
+
+const createShippingZone = async (payload) => {
+  const values = {
+    ...payload,
+    name: normalizeLocation(payload.name),
+    city: normalizeLocation(payload.city),
+    province: normalizeLocation(payload.province),
+    area: normalizeLocation(payload.area),
+  };
+
+  await ensureUniqueLocation(values);
+
+  try {
+    return await ShippingZone.create(values);
+  } catch (error) {
+    handleDatabaseError(error);
+  }
+};
+
+const updateShippingZone = async (id, payload) => {
+  const zone = await findZoneOrFail(id);
+
+  const updates = { ...payload };
+
+  for (const field of ["name", "city", "province", "area"]) {
+    if (updates[field] !== undefined) {
+      updates[field] = normalizeLocation(updates[field]);
+    }
+  }
+
+  const nextLocation = {
+    city: updates.city ?? zone.city,
+    province: updates.province ?? zone.province,
+    area: updates.area ?? zone.area,
+  };
+
+  if (
+    updates.city !== undefined ||
+    updates.province !== undefined ||
+    updates.area !== undefined
+  ) {
+    await ensureUniqueLocation(nextLocation, zone._id);
+  }
+
+  Object.assign(zone, updates);
+
+  try {
+    await zone.save();
+    return zone;
+  } catch (error) {
+    handleDatabaseError(error);
+  }
+};
+
+const activateShippingZone = async (id) =>
+  updateShippingZone(id, { isActive: true });
+
+const deactivateShippingZone = async (id) =>
+  updateShippingZone(id, { isActive: false });
+
+const shippingService = {
+  getAdminShippingZones,
+  createShippingZone,
+  updateShippingZone,
+  activateShippingZone,
+  deactivateShippingZone,
+};
+
+export default shippingService;
+
+
+==========================================
+FILE 3: backend/src/controllers/shipping/shipping.controller.js
+==========================================
+
+import shippingService from "../../services/shipping/shipping.service.js";
+import ApiResponse from "../../utils/ApiResponse.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const getAdminShippingZones = async (req, res, next) => {
+  try {
+    const result = await shippingService.getAdminShippingZones(
+      req.query
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        result,
+        "Shipping zones retrieved successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const createShippingZone = async (req, res, next) => {
+  try {
+    const zone = await shippingService.createShippingZone(req.body);
+
+    return res.status(HTTP_STATUS.CREATED).json(
+      new ApiResponse(
+        HTTP_STATUS.CREATED,
+        { zone },
+        "Shipping zone created successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateShippingZone = async (req, res, next) => {
+  try {
+    const zone = await shippingService.updateShippingZone(
+      req.params.id,
+      req.body
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { zone },
+        "Shipping zone updated successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const activateShippingZone = async (req, res, next) => {
+  try {
+    const zone = await shippingService.activateShippingZone(
+      req.params.id
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { zone },
+        "Shipping zone activated successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deactivateShippingZone = async (req, res, next) => {
+  try {
+    const zone = await shippingService.deactivateShippingZone(
+      req.params.id
+    );
+
+    return res.status(HTTP_STATUS.OK).json(
+      new ApiResponse(
+        HTTP_STATUS.OK,
+        { zone },
+        "Shipping zone deactivated successfully."
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const shippingController = {
+  getAdminShippingZones,
+  createShippingZone,
+  updateShippingZone,
+  activateShippingZone,
+  deactivateShippingZone,
+};
+
+export default shippingController;
+
+
+==========================================
+FILE 4: backend/src/validators/shipping/shipping.validator.js
+==========================================
+
+import { z } from "zod";
+
+const shippingZoneFields = {
+  name: z.string().trim().min(2).max(100),
+  city: z.string().trim().min(2).max(100),
+  province: z.string().trim().min(2).max(100),
+  area: z.string().trim().min(2).max(150),
+  deliveryFee: z.number().int().min(0).max(1000000),
+};
+
+export const createShippingZoneSchema = z
+  .object(shippingZoneFields)
+  .strict();
+
+export const updateShippingZoneSchema = z
+  .object({
+    ...shippingZoneFields,
+    isActive: z.boolean(),
+  })
+  .partial()
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field is required.",
+  });
+
+
+==========================================
+FILE 5: backend/src/routes/shipping/shipping.routes.js
+==========================================
+
+import { Router } from "express";
+
+import shippingController from "../../controllers/shipping/shipping.controller.js";
+
+import authenticate from "../../middleware/auth/auth.middleware.js";
+import authorizeAdmin from "../../middleware/admin.middleware.js";
+import validate from "../../middleware/validate.middleware.js";
+
+import {
+  createShippingZoneSchema,
+  updateShippingZoneSchema,
+} from "../../validators/shipping/shipping.validator.js";
+
+const router = Router();
+
+router.use(authenticate, authorizeAdmin);
+
+router.get("/", shippingController.getAdminShippingZones);
+
+router.post(
+  "/",
+  validate(createShippingZoneSchema),
+  shippingController.createShippingZone
+);
+
+router.patch(
+  "/:id",
+  validate(updateShippingZoneSchema),
+  shippingController.updateShippingZone
+);
+
+router.patch(
+  "/:id/activate",
+  shippingController.activateShippingZone
+);
+
+router.patch(
+  "/:id/deactivate",
+  shippingController.deactivateShippingZone
+);
+
+export default router;
+
+
+==========================================
+FILE 6: backend/src/models/order/Order.model.js
+==========================================
+
+import mongoose from "mongoose";
+
+const orderItemSchema = new mongoose.Schema(
+  {
+    product: {
+      productId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Product",
+        required: true,
+      },
+      sku: {
+        type: String,
+        required: true,
+        trim: true,
+        uppercase: true,
+      },
+      name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      slug: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      image: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: Number.isInteger,
+    },
+    unitPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    lineTotal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false }
+);
+
+const customerSchema = new mongoose.Schema(
+  {
+    fullName: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 80,
+    },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+    phone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    addressLine1: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    addressLine2: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    city: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    area: {
+  type: String,
+  required: true,
+  trim: true,
+  maxlength: 150,
+},
+    province: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    postalCode: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
+const statusHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      required: true,
+      enum: [
+        "placed",
+        "confirmed",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ],
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+    },
+    note: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500,
+    },
+  },
+  { _id: false }
+);
+
+const orderSchema = new mongoose.Schema(
+  {
+    orderNumber: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      uppercase: true,
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    guestAccessTokenHash: {
+  type: String,
+  default: null,
+  select: false,
+},
+    customer: {
+      type: customerSchema,
+      required: true,
+    },
+    items: {
+      type: [orderItemSchema],
+      required: true,
+      validate: {
+        validator: (items) => items.length > 0,
+        message: "An order must contain at least one product.",
+      },
+    },
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    deliveryFee: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    total: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    deliveryMethod: {
+      type: String,
+      required: true,
+      enum: ["standard", "express"],
+    },
+    paymentMethod: {
+      type: String,
+      required: true,
+      enum: ["cod",],
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed", "refunded"],
+      default: "pending",
+    },
+    status: {
+      type: String,
+      enum: [
+        "placed",
+        "confirmed",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ],
+      default: "placed",
+      index: true,
+    },
+    statusHistory: {
+      type: [statusHistorySchema],
+      default: [],
+    },
+    cancellationReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500,
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+);
+
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ guestAccessTokenHash: 1 });
+orderSchema.index({ "customer.email": 1, createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+
+const Order = mongoose.model("Order", orderSchema);
+
+export default Order;
+
+
+==========================================
+FILE 7: backend/src/validators/order/order.validator.js
+==========================================
+
+import { z } from "zod";
+
+const customerSchema = z.object({
+  fullName: z.string().trim().min(3).max(80),
+  email: z.string().trim().email().max(254),
+  phone: z.string().trim().min(7).max(20),
+  addressLine1: z.string().trim().min(5).max(200),
+  addressLine2: z.string().trim().max(200).optional().default(""),
+  city: z.string().trim().min(2).max(80),
+  area: z.string().trim().min(2).max(150),
+  province: z.string().trim().min(2).max(80),
+  postalCode: z.string().trim().min(2).max(20),
+}).strict();
+
+const orderItemSchema = z.object({
+  sku: z.string().trim().min(3).max(40).transform((value) =>
+    value.toUpperCase()
+  ),
+  quantity: z.number().int().min(1).max(100),
+}).strict();
+
+export const createOrderSchema = z.object({
+  customer: customerSchema,
+  items: z.array(orderItemSchema).min(1).max(50),
+ deliveryMethod: z.literal("standard"),
+  paymentMethod: z.literal("cod"),
+}).strict();
+
+export const cancelOrderSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+}).strict();
+
+export const guestOrderConfirmationSchema = z.object({
+  accessToken: z.string().regex(
+    /^[a-f\d]{64}$/i,
+    "Invalid guest order access token."
+  ),
+}).strict();
+
+
+==========================================
+FILE 8: backend/src/services/order/order.service.js
+==========================================
+
+import { randomBytes, randomUUID, createHash } from "node:crypto";
+
+import mongoose from "mongoose";
+
+import Order from "../../models/order/Order.model.js";
+import Product from "../../models/product/Product.model.js";
+
+import ApiError from "../../utils/ApiError.js";
+import { HTTP_STATUS } from "../../constants/index.js";
+
+const MAX_ORDER_QUANTITY = 100;
+const GUEST_TOKEN_BYTES = 32;
+
+const generateOrderNumber = () =>
+  `NEXA-${Date.now().toString().slice(-8)}-${randomUUID()
+    .replace(/-/g, "")
+    .slice(0, 8)
+    .toUpperCase()}`;
+
+const generateGuestAccessToken = () =>
+  randomBytes(GUEST_TOKEN_BYTES).toString("hex");
+
+const hashGuestAccessToken = (token) =>
+  createHash("sha256").update(token).digest("hex");
+
+const normalizeEmail = (email) =>
+  String(email || "").trim().toLowerCase();
+
+const sanitizeOrder = (order) => {
+  if (!order) return null;
+
+  const safeOrder = order.toObject
+    ? order.toObject()
+    : { ...order };
+
+  delete safeOrder.guestAccessTokenHash;
+
+  return safeOrder;
+};
+
+const validateOrderId = (orderId) => {
+  if (!mongoose.isValidObjectId(orderId)) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid order ID."
+    );
+  }
+};
+
+const createOrder = async ({
+  customer,
+  items,
+  deliveryMethod,
+  paymentMethod,
+  userId = null,
+}) => {
+  if (!customer || !Array.isArray(items) || items.length === 0) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Required order information is missing."
+    );
+  }
+
+  if (paymentMethod !== "cod") {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Currently, only Cash on Delivery is available."
+    );
+  }
+
+  if (deliveryMethod !== "standard") {
+  throw new ApiError(
+    HTTP_STATUS.BAD_REQUEST,
+    "Currently, only standard delivery is available."
+  );
+}
+
+  if (items.length > 50) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "An order cannot contain more than 50 products."
+    );
+  }
+
+  const normalizedItems = items.map((item) => ({
+    sku: String(item.sku || "").trim().toUpperCase(),
+    quantity: Number(item.quantity),
+  }));
+
+  const uniqueSkus = new Set(
+    normalizedItems.map((item) => item.sku)
+  );
+
+  if (
+    uniqueSkus.size !== normalizedItems.length ||
+    normalizedItems.some(
+      (item) =>
+        !item.sku ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1 ||
+        item.quantity > MAX_ORDER_QUANTITY
+    )
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Invalid or duplicate products in your order."
+    );
+  }
+
+  const guestAccessToken = userId
+    ? null
+    : generateGuestAccessToken();
+
+  const guestAccessTokenHash = guestAccessToken
+    ? hashGuestAccessToken(guestAccessToken)
+    : null;
+
+  const session = await mongoose.startSession();
+
+  let createdOrder;
+
+  try {
+    await session.withTransaction(async () => {
+      const products = await Product.find({
+        sku: { $in: normalizedItems.map((item) => item.sku) },
+        isActive: true,
+      }).session(session);
+
+      if (products.length !== normalizedItems.length) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "One or more products are unavailable."
+        );
+      }
+
+      const productMap = new Map(
+        products.map((product) => [product.sku, product])
+      );
+
+      const orderItems = [];
+      let subtotal = 0;
+
+      for (const item of normalizedItems) {
+        const product = productMap.get(item.sku);
+
+        if (!product) {
+          throw new ApiError(
+            HTTP_STATUS.NOT_FOUND,
+            `Product ${item.sku} was not found.`
+          );
+        }
+
+        if (product.stock < item.quantity) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            `Insufficient stock for ${product.name}.`
+          );
+        }
+
+        const unitPrice = Number(product.price);
+        const lineTotal = unitPrice * item.quantity;
+
+        if (
+          !Number.isFinite(unitPrice) ||
+          unitPrice < 0 ||
+          !Number.isFinite(lineTotal)
+        ) {
+          throw new ApiError(
+            HTTP_STATUS.INTERNAL_SERVER_ERROR,
+            "Invalid product pricing configuration."
+          );
+        }
+
+        subtotal += lineTotal;
+
+        orderItems.push({
+          product: {
+            productId: product._id,
+            sku: product.sku,
+            name: product.name,
+            slug: product.slug,
+            image: product.image,
+          },
+          quantity: item.quantity,
+          unitPrice,
+          lineTotal,
+        });
+      }
+
+      for (const item of normalizedItems) {
+        const product = productMap.get(item.sku);
+
+        const stockUpdate = await Product.updateOne(
+          {
+            _id: product._id,
+            isActive: true,
+            stock: { $gte: item.quantity },
+          },
+          {
+            $inc: { stock: -item.quantity },
+          },
+          { session }
+        );
+
+        if (stockUpdate.modifiedCount !== 1) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            `Stock changed for ${product.name}. Please try again.`
+          );
+        }
+      }
+
+      const orderData = {
+        orderNumber: generateOrderNumber(),
+        user: userId || null,
+        guestAccessTokenHash,
+        customer: {
+          fullName: customer.fullName.trim(),
+          email: normalizeEmail(customer.email),
+          phone: customer.phone.trim(),
+          addressLine1: customer.addressLine1.trim(),
+          addressLine2: customer.addressLine2?.trim() || "",
+          city: customer.city.trim(),
+          province: customer.province.trim(),
+          postalCode: customer.postalCode.trim(),
+        },
+        items: orderItems,
+        subtotal,
+        deliveryFee: null,
+        total: subtotal,
+        deliveryMethod,
+        paymentMethod: "cod",
+        paymentStatus: "pending",
+        status: "placed",
+        statusHistory: [
+          {
+            status: "placed",
+            timestamp: new Date(),
+            note: "Your order has been successfully placed.",
+          },
+        ],
+      };
+
+      const [order] = await Order.create(
+        [orderData],
+        { session }
+      );
+
+      createdOrder = order;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return {
+    order: sanitizeOrder(createdOrder),
+    guestAccessToken,
+  };
+};
+
+const getCustomerOrders = async (userId) => {
+  return Order.find({ user: userId })
+    .sort({ createdAt: -1 })
+    .lean();
+};
+
+const getCustomerOrderById = async (orderId, userId) => {
+  validateOrderId(orderId);
+
+  const order = await Order.findOne({
+    _id: orderId,
+    user: userId,
+  }).lean();
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found."
+    );
+  }
+
+  return order;
+};
+
+const getGuestOrderConfirmation = async (
+  orderId,
+  accessToken
+) => {
+  validateOrderId(orderId);
+
+  if (
+    typeof accessToken !== "string" ||
+    !/^[a-f\d]{64}$/i.test(accessToken)
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.UNAUTHORIZED,
+      "Invalid order access credentials."
+    );
+  }
+
+  const tokenHash = hashGuestAccessToken(accessToken);
+
+  const order = await Order.findOne({
+    _id: orderId,
+    user: null,
+    guestAccessTokenHash: tokenHash,
+  })
+    .select("+guestAccessTokenHash")
+    .lean();
+
+  if (!order) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Order not found or access denied."
+    );
+  }
+
+  delete order.guestAccessTokenHash;
+
+  return order;
+};
+
+const cancelOrder = async (orderId, userId, reason) => {
+  validateOrderId(orderId);
+
+  const normalizedReason = String(reason || "").trim();
+
+  if (
+    normalizedReason.length < 5 ||
+    normalizedReason.length > 500
+  ) {
+    throw new ApiError(
+      HTTP_STATUS.BAD_REQUEST,
+      "Cancellation reason must contain 5 to 500 characters."
+    );
+  }
+
+  const session = await mongoose.startSession();
+
+  let cancelledOrder;
+
+  try {
+    await session.withTransaction(async () => {
+      const order = await Order.findOne({
+        _id: orderId,
+        user: userId,
+      }).session(session);
+
+      if (!order) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "Order not found."
+        );
+      }
+
+      if (
+        !["placed", "confirmed", "processing"].includes(
+          order.status
+        )
+      ) {
+        throw new ApiError(
+          HTTP_STATUS.BAD_REQUEST,
+          "This order is no longer eligible for cancellation."
+        );
+      }
+
+      for (const item of order.items) {
+        const stockUpdate = await Product.updateOne(
+          { _id: item.product.productId },
+          { $inc: { stock: item.quantity } },
+          { session }
+        );
+
+        if (stockUpdate.matchedCount !== 1) {
+          throw new ApiError(
+            HTTP_STATUS.CONFLICT,
+            "Unable to restore product inventory."
+          );
+        }
+      }
+
+      order.status = "cancelled";
+      order.cancellationReason = normalizedReason;
+
+      order.statusHistory.push({
+        status: "cancelled",
+        timestamp: new Date(),
+        note: normalizedReason,
+      });
+
+      await order.save({ session });
+
+      cancelledOrder = order;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return sanitizeOrder(cancelledOrder);
+};
+
+const orderService = {
+  createOrder,
+  getCustomerOrders,
+  getCustomerOrderById,
+  getGuestOrderConfirmation,
+  cancelOrder,
+};
+
+export default orderService;
+
+
+==========================================
+FILE 9: frontend/src/features/checkout/pages/CheckoutPage.jsx
+==========================================
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, ShoppingBag } from "lucide-react";
+
+import MainLayout from "../../../layouts/MainLayout";
+import useShopStore from "../../../store/useShopStore";
+import useAccount from "../../account/hooks/useAccount";
+import orderService from "../../orders/services/orderService";
+
+import CustomerInformation from "../components/CustomerInformation";
+import ShippingAddressForm from "../components/ShippingAddressForm";
+import DeliveryMethod from "../components/DeliveryMethod";
+import PaymentMethod from "../components/PaymentMethod";
+import OrderSummary from "../components/OrderSummary";
+
+import "../checkout.css";
+
+const CHECKOUT_FORM_ID = "nexamart-checkout-form";
+const GUEST_ORDER_TOKEN_PREFIX = "nexamart-guest-order:";
+
+const INITIAL_FORM_VALUES = {
+  fullName: "",
+  email: "",
+  phone: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  province: "",
+  postalCode: "",
+};
+
+const validateForm = (values) => {
+  const errors = {};
+
+  if (values.fullName.trim().length < 3) {
+    errors.fullName = "Please enter your full name.";
+  }
+
+  if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())
+  ) {
+    errors.email = "Please enter a valid email address.";
+  }
+
+  if (values.phone.trim().length < 7) {
+    errors.phone = "Please enter a valid phone number.";
+  }
+
+  if (values.addressLine1.trim().length < 5) {
+    errors.addressLine1 = "Please enter your complete street address.";
+  }
+
+  if (values.city.trim().length < 2) {
+    errors.city = "Please enter your city.";
+  }
+
+  if (values.province.trim().length < 2) {
+    errors.province = "Please enter your province.";
+  }
+
+  if (values.postalCode.trim().length < 2) {
+    errors.postalCode = "Please enter your postal code.";
+  }
+
+  return errors;
+};
+
+const getOrderId = (order) => order?._id || order?.id;
+
+const CheckoutPage = () => {
+  const navigate = useNavigate();
+
+  const cartItems = useShopStore((state) => state.cartItems);
+  const clearCart = useShopStore((state) => state.clearCart);
+
+  const { currentUser } = useAccount();
+
+  const [formValues, setFormValues] = useState(() => ({
+    ...INITIAL_FORM_VALUES,
+  }));
+
+  const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const [deliveryMethod, setDeliveryMethod] = useState("standard");
+  const [paymentMethod, setPaymentMethod] = useState("cod");
+
+  const subtotal = useMemo(
+    () =>
+      cartItems.reduce(
+        (total, item) =>
+          total + Number(item.product?.price || 0) * item.quantity,
+        0
+      ),
+    [cartItems]
+  );
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    setFormValues((previous) => ({
+      ...previous,
+      fullName:
+        previous.fullName ||
+        currentUser.fullName ||
+        currentUser.name ||
+        "",
+      email: previous.email || currentUser.email || "",
+      phone: previous.phone || currentUser.phone || "",
+    }));
+  }, [currentUser]);
+
+  const handleFieldChange = (field, value) => {
+    setFormValues((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+
+    setErrors((previous) => {
+      if (!previous[field]) return previous;
+
+      const updated = { ...previous };
+      delete updated[field];
+
+      return updated;
+    });
+
+    setSubmitError("");
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (submitting) return;
+
+    if (!cartItems.length) {
+      setSubmitError("Your cart is empty.");
+      return;
+    }
+
+    const validationErrors = validateForm(formValues);
+
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      setSubmitError("Please correct the highlighted fields.");
+      return;
+    }
+
+    setErrors({});
+    setSubmitError("");
+    setSubmitting(true);
+
+    try {
+      const result = await orderService.createOrder({
+        customer: {
+          fullName: formValues.fullName.trim(),
+          email: formValues.email.trim(),
+          phone: formValues.phone.trim(),
+          addressLine1: formValues.addressLine1.trim(),
+          addressLine2: formValues.addressLine2.trim(),
+          city: formValues.city.trim(),
+          province: formValues.province.trim(),
+          postalCode: formValues.postalCode.trim(),
+        },
+        items: cartItems,
+        deliveryMethod,
+        paymentMethod,
+      });
+
+      const orderId = getOrderId(result.order);
+
+      if (!orderId) {
+        throw new Error(
+          "Order was created, but its confirmation ID is missing."
+        );
+      }
+
+      if (result.guestAccessToken) {
+        try {
+          sessionStorage.setItem(
+            `${GUEST_ORDER_TOKEN_PREFIX}${orderId}`,
+            result.guestAccessToken
+          );
+        } catch {
+          // Order creation remains successful if browser storage is unavailable.
+        }
+      }
+
+      clearCart();
+
+      navigate(`/order-confirmation/${orderId}`, {
+        replace: true,
+      });
+    } catch (error) {
+      setSubmitError(
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to place your order. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!cartItems.length) {
+    return (
+      <MainLayout>
+        <div className="checkout-page">
+          <div className="checkout-container">
+            <div className="checkout-empty">
+              <ShoppingBag size={42} />
+
+              <h2>Your cart is empty</h2>
+
+              <p>
+                Add products to your cart before proceeding to checkout.
+              </p>
+
+              <Link to="/shop" className="checkout-submit-button">
+                Explore Products
+              </Link>
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  return (
+    <MainLayout>
+      <div className="checkout-page">
+        <div className="checkout-container">
+          <Link to="/cart" className="checkout-back-link">
+            <ArrowLeft size={17} />
+            Back to Cart
+          </Link>
+
+          <div className="checkout-header">
+            <div>
+              <span className="checkout-eyebrow">SECURE CHECKOUT</span>
+              <h1>Complete Your Order</h1>
+              <p>
+                Provide your details to place your NexaMart order.
+              </p>
+            </div>
+          </div>
+
+          <div className="checkout-layout">
+            <main className="checkout-main">
+              <form
+                id={CHECKOUT_FORM_ID}
+                className="checkout-form"
+                onSubmit={handleSubmit}
+                noValidate
+              >
+                <CustomerInformation
+                  values={formValues}
+                  errors={errors}
+                  onChange={handleFieldChange}
+                />
+
+                <ShippingAddressForm
+                  values={formValues}
+                  errors={errors}
+                  onChange={handleFieldChange}
+                />
+
+                <DeliveryMethod
+                  value={deliveryMethod}
+                  onChange={setDeliveryMethod}
+                />
+
+                <PaymentMethod
+                  value={paymentMethod}
+                  onChange={setPaymentMethod}
+                />
+
+                {submitError && (
+                  <div className="checkout-error-message" role="alert">
+                    {submitError}
+                  </div>
+                )}
+              </form>
+            </main>
+
+            <aside className="checkout-sidebar">
+              <OrderSummary
+                items={cartItems}
+                subtotal={subtotal}
+                submitting={submitting}
+              />
+            </aside>
+          </div>
+        </div>
+      </div>
+    </MainLayout>
+  );
+};
+
+export default CheckoutPage;
+
+==========================================
+FILE 10: frontend/src/features/checkout/components/ShippingAddressForm.jsx
+==========================================
+
+const fields = [
+  {
+    name: "addressLine1",
+    label: "Street Address",
+    placeholder: "House number, street name",
+    wide: true,
+  },
+  {
+    name: "addressLine2",
+    label: "Apartment / Landmark",
+    placeholder: "Optional",
+    wide: true,
+  },
+  {
+    name: "city",
+    label: "City",
+    placeholder: "e.g. Islamabad",
+  },
+  {
+    name: "province",
+    label: "Province",
+    placeholder: "e.g. Islamabad Capital Territory",
+  },
+  {
+    name: "postalCode",
+    label: "Postal Code",
+    placeholder: "Postal code",
+  },
+];
+
+const ShippingAddressForm = ({ values, errors, onChange }) => {
+  return (
+    <section className="checkout-section">
+      <div className="checkout-section-heading">
+        <span className="checkout-section-number">02</span>
+        <div>
+          <h2>Shipping Address</h2>
+          <p>Where should we deliver your order?</p>
+        </div>
+      </div>
+
+      <div className="checkout-form-grid">
+        {fields.map((field) => (
+          <div
+            className={`checkout-field ${field.wide ? "full-width" : ""}`}
+            key={field.name}
+          >
+            <label htmlFor={field.name}>
+              {field.label}
+              {field.name === "addressLine2" && (
+                <span className="optional-label"> (Optional)</span>
+              )}
+            </label>
+
+            <input
+              id={field.name}
+              name={field.name}
+              type="text"
+              placeholder={field.placeholder}
+              value={values[field.name]}
+              onChange={(event) =>
+                onChange(field.name, event.target.value)
+              }
+              aria-invalid={Boolean(errors[field.name])}
+              aria-describedby={
+                errors[field.name] ? `${field.name}-error` : undefined
+              }
+            />
+
+            {errors[field.name] && (
+              <span
+                className="checkout-error"
+                id={`${field.name}-error`}
+              >
+                {errors[field.name]}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+export default ShippingAddressForm;
+
+
+==========================================
+FILE 11: frontend/src/features/checkout/components/OrderSummary.jsx
+==========================================
+
+import { Link } from "react-router-dom";
+import { ShoppingBag } from "lucide-react";
+
+const formatPrice = (amount) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+
+const OrderSummary = ({ items, subtotal, submitting }) => {
+  const totalItems = items.reduce(
+    (total, item) => total + item.quantity,
+    0
+  );
+
+  return (
+    <aside className="checkout-summary">
+      <div className="checkout-summary-heading">
+        <h2>Order Summary</h2>
+        <span>{totalItems} items</span>
+      </div>
+
+      <div className="checkout-summary-products">
+        {items.map(({ product, quantity }) => (
+          <div className="checkout-summary-product" key={product.id}>
+            <div className="checkout-product-image">
+              <img src={product.image} alt={product.name} />
+              <span>{quantity}</span>
+            </div>
+
+            <div className="checkout-product-info">
+              <strong>{product.name}</strong>
+              <small>{formatPrice(product.price)}</small>
+            </div>
+
+            <strong className="checkout-product-total">
+              {formatPrice(Number(product.price) * quantity)}
+            </strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="checkout-summary-divider" />
+
+      <div className="checkout-summary-row">
+        <span>Subtotal</span>
+        <strong>{formatPrice(subtotal)}</strong>
+      </div>
+
+      <div className="checkout-summary-row">
+        <span>Delivery</span>
+        <span>To be confirmed</span>
+      </div>
+
+      <div className="checkout-summary-total">
+        <span>Order Total</span>
+        <strong>{formatPrice(subtotal)}</strong>
+      </div>
+
+      <p className="checkout-summary-note">
+        Delivery charges will be confirmed before dispatch. The amount
+        shown above is the product subtotal only.
+      </p>
+
+      <button
+        type="submit"
+        form="nexamart-checkout-form"
+        className="checkout-submit-button"
+        disabled={submitting || items.length === 0}
+      >
+        <ShoppingBag size={18} />
+        {submitting ? "Processing..." : "Place Order"}
+      </button>
+
+      <Link to="/shop" className="checkout-continue-link">
+        Continue Shopping
+      </Link>
+
+      <div className="checkout-security-note">
+        Your information is handled securely.
+      </div>
+    </aside>
+  );
+};
+
+export default OrderSummary;
+
+
+==========================================
+FILE 12: frontend/src/features/checkout/pages/OrderConfirmationPage.jsx
+==========================================
+
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { CheckCircle2, PackageCheck } from "lucide-react";
+
+import MainLayout from "../../../layouts/MainLayout";
+import orderService from "../../orders/services/orderService";
+import {
+  formatOrderPrice,
+  formatOrderDate,
+  getOrderStatusLabel,
+} from "../../orders/utils/orderUtils";
+
+import "../checkout.css";
+
+const GUEST_ORDER_TOKEN_PREFIX = "nexamart-guest-order:";
+
+const getErrorMessage = (error) =>
+  error.response?.data?.message ||
+  error.message ||
+  "Unable to load your order details.";
+
+const getItemName = (item) =>
+  item.product?.name ||
+  item.productName ||
+  item.name ||
+  item.sku ||
+  "Product";
+
+const getItemLineTotal = (item) =>
+  Number(
+    item.lineTotal ??
+      item.totalPrice ??
+      Number(item.unitPrice ?? item.price ?? item.product?.price ?? 0) *
+        Number(item.quantity ?? 0)
+  );
+
+const OrderConfirmationPage = () => {
+  const { orderId } = useParams();
+
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadOrder = async () => {
+      setLoading(true);
+      setError("");
+      setOrder(null);
+
+      try {
+        const guestAccessToken = sessionStorage.getItem(
+          `${GUEST_ORDER_TOKEN_PREFIX}${orderId}`
+        );
+
+        const result = guestAccessToken
+          ? await orderService.getGuestOrderConfirmation(
+              orderId,
+              guestAccessToken
+            )
+          : await orderService.getMyOrderById(orderId);
+
+        if (!result) {
+          throw new Error("Order details could not be found.");
+        }
+
+        if (isMounted) {
+          setOrder(result);
+        }
+      } catch (requestError) {
+        if (isMounted) {
+          setError(getErrorMessage(requestError));
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    if (orderId) {
+      loadOrder();
+    } else {
+      setError("Invalid order reference.");
+      setLoading(false);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [orderId]);
+
+  const renderUnavailableState = (title, message) => (
+    <div className="confirmation-card">
+      <PackageCheck size={48} />
+      <h1>{title}</h1>
+      <p>{message}</p>
+
+      <Link to="/shop" className="confirmation-button">
+        Continue Shopping
+      </Link>
+    </div>
+  );
+
+  return (
+    <MainLayout>
+      <main className="confirmation-page">
+        <div className="confirmation-container">
+          {loading ? (
+            renderUnavailableState(
+              "Loading Your Order",
+              "Please wait while we retrieve your order details."
+            )
+          ) : error || !order ? (
+            renderUnavailableState(
+              "Order Details Unavailable",
+              error ||
+                "This order could not be found. Please check your order history."
+            )
+          ) : (
+            <div className="confirmation-card">
+              <div className="confirmation-icon">
+                <CheckCircle2 size={48} />
+              </div>
+
+              <span className="checkout-eyebrow">
+                NEXAMART ORDER
+              </span>
+
+              <h1>Thank You for Your Order!</h1>
+
+              <p>
+                Your order has been successfully placed.
+              </p>
+
+              <div className="confirmation-order-number">
+                <span>Order Reference</span>
+                <strong>{order.orderNumber || order._id}</strong>
+              </div>
+
+              <div className="confirmation-details">
+                <div>
+                  <span>Customer</span>
+                  <strong>
+                    {order.customer?.fullName || "Customer"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Order Status</span>
+                  <strong>
+                    {getOrderStatusLabel(order.status)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Order Date</span>
+                  <strong>
+                    {formatOrderDate(order.createdAt)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Payment Method</span>
+                  <strong>
+                    {order.paymentMethod === "cod"
+                      ? "Cash on Delivery"
+                      : "Online Payment"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Delivery Method</span>
+                  <strong>
+                    {order.deliveryMethod === "standard"
+                      ? "Standard Delivery"
+                      : order.deliveryMethod}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Product Subtotal</span>
+                  <strong>
+                    {formatOrderPrice(order.subtotal)}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="confirmation-order-items">
+                <h3>Ordered Products</h3>
+
+                {(order.items || []).map((item, index) => (
+                  <div
+                    className="confirmation-item"
+                    key={item._id || item.sku || index}
+                  >
+                    <span>
+                      {getItemName(item)} Ã— {item.quantity}
+                    </span>
+
+                    <strong>
+                      {formatOrderPrice(getItemLineTotal(item))}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="confirmation-order-total">
+                <span>Order Total</span>
+                <strong>
+                  {formatOrderPrice(order.total)}
+                </strong>
+              </div>
+
+              <p className="confirmation-note">
+                Your order has been securely saved. Delivery charges
+                will be confirmed before dispatch.
+              </p>
+
+              <Link to="/shop" className="confirmation-button">
+                Continue Shopping
+              </Link>
+            </div>
+          )}
+        </div>
+      </main>
+    </MainLayout>
+  );
+};
+
+export default OrderConfirmationPage;
+
+

@@ -5,8 +5,9 @@ import {
   Facebook,
   Linkedin,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 
-const footerGroups = [
+const FOOTER_GROUPS = [
   {
     title: "Discover",
     links: [
@@ -36,22 +37,38 @@ const footerGroups = [
   },
 ];
 
+const SOCIAL_LINKS = [
+  {
+    label: "Instagram",
+    href: "https://instagram.com",
+    Icon: Instagram,
+  },
+  {
+    label: "Facebook",
+    href: "https://facebook.com",
+    Icon: Facebook,
+  },
+  {
+    label: "LinkedIn",
+    href: "https://linkedin.com",
+    Icon: Linkedin,
+  },
+];
+
 export default function Footer() {
   const currentYear = new Date().getFullYear();
 
   return (
     <footer className="site-footer">
-
       <div className="footer-main">
-
         <div className="footer-brand">
-          <a href="/" className="brand footer-logo">
+          <Link to="/" className="brand footer-logo">
             <span className="brand-mark">N</span>
 
             <span className="brand-name">
               Nexa<span>Mart</span>
             </span>
-          </a>
+          </Link>
 
           <p>
             A smarter way to discover, explore and shop.
@@ -59,46 +76,52 @@ export default function Footer() {
           </p>
 
           <div className="footer-socials">
-            <a href="https://instagram.com" aria-label="Instagram">
-              <Instagram size={17} />
-            </a>
-
-            <a href="https://facebook.com" aria-label="Facebook">
-              <Facebook size={17} />
-            </a>
-
-            <a href="https://linkedin.com" aria-label="LinkedIn">
-              <Linkedin size={17} />
-            </a>
+            {SOCIAL_LINKS.map(({ label, href, Icon }) => (
+              <a
+                key={label}
+                href={href}
+                aria-label={label}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Icon size={17} />
+              </a>
+            ))}
           </div>
         </div>
 
-        {footerGroups.map((group) => (
+        {FOOTER_GROUPS.map((group) => (
           <div className="footer-group" key={group.title}>
             <h3>{group.title}</h3>
 
             <ul>
               {group.links.map(([label, href]) => (
                 <li key={href}>
-                  <a href={href}>{label}</a>
+                  <Link to={href}>{label}</Link>
                 </li>
               ))}
             </ul>
           </div>
         ))}
-
       </div>
 
       <div className="footer-newsletter">
         <div>
-          <span className="footer-eyebrow">STAY CONNECTED</span>
+          <span className="footer-eyebrow">
+            STAY CONNECTED
+          </span>
+
           <h3>Something worth discovering.</h3>
-          <p>Stay informed about our latest collections and updates.</p>
+
+          <p>
+            Stay informed about our latest collections and updates.
+          </p>
         </div>
 
-        <a href="/shop" className="footer-explore-link">
-          Explore NexaMart <ArrowRight size={16} />
-        </a>
+        <Link to="/shop" className="footer-explore-link">
+          Explore NexaMart
+          <ArrowRight size={16} />
+        </Link>
       </div>
 
       <div className="footer-bottom">
@@ -106,9 +129,10 @@ export default function Footer() {
           © {currentYear} NexaMart. All rights reserved.
         </p>
 
-        <span>Designed for a smarter shopping experience.</span>
+        <span>
+          Designed for a smarter shopping experience.
+        </span>
       </div>
-
     </footer>
   );
 }

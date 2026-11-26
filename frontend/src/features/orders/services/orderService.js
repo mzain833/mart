@@ -58,6 +58,20 @@ const cancelOrder = async (orderId, reason) => {
 
   return getResponseData(response)?.order ?? null;
 };
+const getShippingQuote = async (address, { signal } = {}) => {
+  const response = await apiClient.post(
+    "/shipping/quote",
+    {
+      city: address.city,
+      province: address.province,
+      area: address.area,
+    },
+    { signal }
+  );
+
+  return getResponseData(response)?.quote ?? null;
+};
+
 
 const orderService = {
   createOrder,
@@ -65,6 +79,7 @@ const orderService = {
   getMyOrderById,
   getGuestOrderConfirmation,
   cancelOrder,
+  getShippingQuote,
 };
 
 export default orderService;
